@@ -1,9 +1,18 @@
 package org.firstinspires.ftc.teamcode;
 
+import android.util.Size;
+
+import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.util.ElapsedTime;
+
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
+import org.firstinspires.ftc.vision.VisionPortal;
+import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 
 @TeleOp(name="MainDrive", group="Main")
 public class main extends LinearOpMode {
@@ -11,8 +20,6 @@ public class main extends LinearOpMode {
     ElapsedTime timer = new ElapsedTime();
 
     int cRP, oRP, cLP, oLP, cAP, oAP; //current position, old position -> Left, Right, Aux
-    double oT;
-    boolean bTranslating = false;
 
     //173,5 180,5
     double L = 17.7, B = 8.9, R = 2, N = 8192;
@@ -21,6 +28,27 @@ public class main extends LinearOpMode {
 
     @Override
     public void runOpMode() {
+        //--- Dashboard Init ---
+        telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
+        //---
+
+        //--- Camera Init ---
+        AprilTagProcessor tagProcessor = new AprilTagProcessor.Builder()
+                .setDrawAxes(true)
+                .setDrawTagOutline(true)
+                .setDrawTagID(true)
+                .build();
+
+        VisionPortal visionPortal = new VisionPortal.Builder()
+                .addProcessor(tagProcessor)
+                .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
+                .setCameraResolution(new Size(640, 480))
+                .enableLiveView(true)
+                .build();
+
+        FtcDashboard.getInstance().startCameraStream(visionPortal, 30);
+        //---
+
         //--- DriveMotors Init ---
         DcMotor lfD = hardwareMap.get(DcMotor.class, "lf");
         DcMotor lbD = hardwareMap.get(DcMotor.class, "lb");
@@ -82,7 +110,6 @@ public class main extends LinearOpMode {
         while (opModeIsActive()) {
             odometry(ctx);
 
-
             double x = pos[0], y = pos[1], t = pos[2];
 
             double lX = gamepad1.left_stick_x, lY = -gamepad1.left_stick_y;
@@ -98,6 +125,12 @@ public class main extends LinearOpMode {
             ctx.lBd.setPower(MotArr[1] * speed);
             ctx.rFd.setPower(MotArr[2] * speed);
             ctx.rBd.setPower(MotArr[3] * speed);
+
+            if (!tagProcessor.getDetections().isEmpty()) {
+                AprilTagDetection tag = tagProcessor.getDetections().get(0);
+
+                telemetry.addData("CameraTag", "x: %.2f y: %.2f z: %.2f roll: %.2f pitch: %.2f yaw: %.2f",  tag.ftcPose.x, tag.ftcPose.y, tag.ftcPose.z, tag.ftcPose.roll, tag.ftcPose.pitch, tag.ftcPose.yaw);
+            }
 
             telemetry.addData("lra", "l: %6d r: %6d a: %6d", cLP, cRP, cAP);
             telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(t));
@@ -119,13 +152,13 @@ public class main extends LinearOpMode {
             //lf, lb, rf, rb
             return new double[]{o1, o2, o2, o1};
         } else {
-            //Rotazione ->
+            //Rotation ->
             return new double[]{rX, rX, -rX, -rX};
         }
     }
 
     private double getAng(double a, int dir) {
-        return 0.5 + 1f/135f*a*dir; //1dx -1sx(il lato brutto)
+        return 0.5 + 1f/135f*a*dir; //1dx -1sx
     }
 
     private void odometry(ctx ctx) {
