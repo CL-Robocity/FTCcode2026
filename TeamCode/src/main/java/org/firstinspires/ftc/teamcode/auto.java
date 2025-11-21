@@ -1,110 +1,138 @@
 package org.firstinspires.ftc.teamcode;
 
-import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import android.util.Size;
+
+import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
+
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 
-@Autonomous
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
+import org.firstinspires.ftc.vision.VisionPortal;
+import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
+import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
+import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
 
+@TeleOp(name="MainAuto", group="Main")
 public class auto extends LinearOpMode {
 
-    int oRP, oLP, oAP;
-    double oT, vClawTime, oClawTime, vClawTime2;
-    boolean bTranslating = false, vClawCheck = false, vClawCheck2 = false, oClawCheck = false;
+    ElapsedTime timer = new ElapsedTime();
+
+    //--- IMU declaration ---
+    IMU imu;
+    IMU.Parameters imuParams;
+    //---
+
+    int cRP, oRP, cLP, oLP, cAP, oAP; //current position, old position -> Left, Right, Aux
 
     //173,5 180,5
-    double L = 17.7, O = 8.9, R = 2, N = 8192, correctionFact = 180f/180*Math.PI;//0.4;
-    double cm = 2 * Math.PI * R / N, a = Math.atan2(O, L), P = Math.hypot(O, L);
+    double L = 17.7, B = 8.9, R = 2, N = 8192;
+    double cmTickRatio = 2 * Math.PI * R / N;
     double[] pos = {0, 0, 0};
 
     @Override
     public void runOpMode() {
-        DcMotor leftFrontDrive = hardwareMap.get(DcMotor.class, "lf");
-        DcMotor leftBackDrive = hardwareMap.get(DcMotor.class, "lb");
-        DcMotor rightFrontDrive = hardwareMap.get(DcMotor.class, "rf");
-        DcMotor rightBackDrive = hardwareMap.get(DcMotor.class, "rb");
-        DcMotor leftVerticalSlider = hardwareMap.get(DcMotor.class, "lvs");
-        DcMotor rightVerticalSlider = hardwareMap.get(DcMotor.class, "rvs");
-        DcMotor leftOrizontalSlider = hardwareMap.get(DcMotor.class, "los");
-        DcMotor rightOrizontalSlider = hardwareMap.get(DcMotor.class, "ros");
-        Servo vClawS = hardwareMap.get(Servo.class, "vcs");
-        Servo vHandS = hardwareMap.get(Servo.class, "vhs");
-        Servo vArmS = hardwareMap.get(Servo.class, "vas");
-        Servo oClawS = hardwareMap.get(Servo.class, "ocs");
-        Servo oHandS = hardwareMap.get(Servo.class, "ohs");
-        Servo oArmS = hardwareMap.get(Servo.class, "oas");
+        //--- Dashboard Init ---
+        telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
+        //---
 
-        DcMotor encoder1 = hardwareMap.get(DcMotor.class, "lb");
-        DcMotor encoder2 = hardwareMap.get(DcMotor.class, "rb");
-        DcMotor encoder3 = hardwareMap.get(DcMotor.class, "lf");
+        //--- IMU init ---
+        imu = hardwareMap.get(IMU.class, "imu");
+        imuParams = new IMU.Parameters(new RevHubOrientationOnRobot(new Orientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES, 90, 0, -45, 0)));
+        imu.initialize(imuParams);
+        YawPitchRollAngles orientation;
+        //---
 
-        encoder1.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        encoder2.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        encoder3.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        encoder1.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        encoder2.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        encoder3.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        //--- Camera Init ---
+        AprilTagProcessor tagProcessor = new AprilTagProcessor.Builder()
+                .setDrawAxes(true)
+                .setDrawTagOutline(true)
+                .setDrawTagID(true)
+                .build();
+
+        VisionPortal visionPortal = new VisionPortal.Builder()
+                .addProcessor(tagProcessor)
+                .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
+                .setCameraResolution(new Size(640, 480))
+                .enableLiveView(true)
+                .build();
+
+        FtcDashboard.getInstance().startCameraStream(visionPortal, 30);
+        //---
+
+        //--- DriveMotors Init ---
+        DcMotor lfD = hardwareMap.get(DcMotor.class, "lf");
+        DcMotor lbD = hardwareMap.get(DcMotor.class, "lb");
+        DcMotor rfD = hardwareMap.get(DcMotor.class, "rf");
+        DcMotor rbD = hardwareMap.get(DcMotor.class, "rb");
+
+        lfD.setDirection(DcMotor.Direction.REVERSE);
+        lbD.setDirection(DcMotor.Direction.REVERSE);
+        rbD.setDirection(DcMotor.Direction.FORWARD);
+        rfD.setDirection(DcMotor.Direction.FORWARD);
+
+        lfD.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        lbD.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        rbD.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        rfD.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+
+        lfD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        lbD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        rfD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        rbD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        //---
+
+        //--- Motors and Servos Init ---
+        /*
+        DcMotor dcMotor = hardwareMap.get(DcMotor.class, "DcMotorName");
+        Servo servo = hardwareMap.get(Servo.class, "servoName");
+
+        dcMotor.setDirection(DcMotor.Direction.FORWARD);
+        dcMotor.setTargetPosition(0);
+        dcMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        dcMotor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        dcMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        dcMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        */
+        //---
+
+        //--- Odometry Encoders Init ---
+        DcMotor odoL = hardwareMap.get(DcMotor.class, "lb");
+        DcMotor odoR = hardwareMap.get(DcMotor.class, "rb");
+        DcMotor odoA = hardwareMap.get(DcMotor.class, "lf");
+        odoL.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        odoR.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        odoA.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        odoL.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        odoR.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        odoA.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        //---
 
         telemetry.addData("Status", "Initialized");
         telemetry.update();
 
-        leftFrontDrive.setDirection(DcMotor.Direction.REVERSE);
-        leftBackDrive.setDirection(DcMotor.Direction.REVERSE);
-        rightBackDrive.setDirection(DcMotor.Direction.FORWARD);
-        rightFrontDrive.setDirection(DcMotor.Direction.FORWARD);
-        leftVerticalSlider.setDirection(DcMotor.Direction.FORWARD);
-        rightVerticalSlider.setDirection(DcMotor.Direction.FORWARD);
-        leftOrizontalSlider.setDirection(DcMotor.Direction.FORWARD);
-        rightOrizontalSlider.setDirection(DcMotor.Direction.FORWARD);
-
-        leftVerticalSlider.setTargetPosition(0);
-        rightVerticalSlider.setTargetPosition(0);
-        leftOrizontalSlider.setTargetPosition(0);
-        rightOrizontalSlider.setTargetPosition(0);
-
-        leftFrontDrive.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        leftBackDrive.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        rightBackDrive.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        rightFrontDrive.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-
-        leftVerticalSlider.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        rightVerticalSlider.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        leftOrizontalSlider.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        rightOrizontalSlider.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        leftVerticalSlider.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        rightVerticalSlider.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        leftOrizontalSlider.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        rightOrizontalSlider.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        leftVerticalSlider.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        rightVerticalSlider.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        leftVerticalSlider.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        rightVerticalSlider.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        leftOrizontalSlider.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        rightOrizontalSlider.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-
-        ctx ctx = new ctx(leftFrontDrive, leftBackDrive, rightFrontDrive, rightBackDrive, encoder1, encoder2, encoder3);
+        //Robot Context Init
+        ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoL, odoR, odoA);
 
         waitForStart();
+        timer.reset();
 
-        double fact = .65; //dumping
-
+        double speed = 1;
         while (opModeIsActive()) {
             odometry(ctx);
+            orientation = imu.getRobotYawPitchRollAngles();
+            telemetry.addData("degrees", orientation.getYaw(AngleUnit.DEGREES));
+
             double x = pos[0], y = pos[1], t = pos[2];
-
-            if (!leftOrizontalSlider.isBusy() && !rightOrizontalSlider.isBusy()) {
-                leftOrizontalSlider.setPower(0);
-                rightOrizontalSlider.setPower(0);
-            } else {
-                leftOrizontalSlider.setPower(1);
-                rightOrizontalSlider.setPower(1);
-            }
-
-            telemetry.addData("x", x);
-            telemetry.addData("y", y);
-            telemetry.addData("t", t/Math.PI*180);
 
             double lX = gamepad1.left_stick_x, lY = -gamepad1.left_stick_y;
             lX = Math.abs(lX) < .4 ? 0 : lX; //dead zone
@@ -113,130 +141,31 @@ public class auto extends LinearOpMode {
             rX = Math.abs(rX) < .2 ? 0 : rX;
             rY = Math.abs(rY) < .2 ? 0 : rY;
 
-            if (!bTranslating && ( lX != 0 && lY != 0)) { // DA CAVARE
-                bTranslating = true;
-            } else if (bTranslating && ( lX == 0 && lY == 0)) {
-                bTranslating = false;
-            }
-            if (!bTranslating) {
-                oT = t;
-            }
+            double[] MotArr = MotorOut(-lX, -lY, rX, rY);
 
-            //double[] fCtr = processRawCtr(lX, lY); DA RIMETTERE
+            ctx.lFd.setPower(MotArr[0] * speed);
+            ctx.lBd.setPower(MotArr[1] * speed);
+            ctx.rFd.setPower(MotArr[2] * speed);
+            ctx.rBd.setPower(MotArr[3] * speed);
 
-            double[] MotArr = MotorOut(+lX, -lY/*fCtr[0], fCtr[1]*/, rX, rY);
+            if (!tagProcessor.getDetections().isEmpty()) {
+                AprilTagDetection tag = tagProcessor.getDetections().get(0);
 
-            ctx.lFd.setPower(MotArr[0] * fact);
-            ctx.lBd.setPower(MotArr[1] * fact);
-            ctx.rFd.setPower(MotArr[2] * fact);
-            ctx.rBd.setPower(MotArr[3] * fact);
-
-            if (gamepad2.triangle) {
-                oHandS.scaleRange(-1, 1);
-                leftOrizontalSlider.setTargetPosition(-60);
-                rightOrizontalSlider.setTargetPosition(60);
-                if (gamepad2.dpad_down) {
-                    if (oClawCheck) {
-                        oClawCheck = false;
-                        oArmS.setPosition(0.45);
-                        oClawTime = getRuntime();
-                    }
-                    if (getRuntime() - oClawTime > .3) {
-                        oClawS.setPosition(0.3);
-                    }
+                if (tag.ftcPose != null) {
+                    telemetry.addData("CameraTag", "x: %.2f y: %.2f z: %.2f roll: %.2f pitch: %.2f yaw: %.2f",
+                            tag.ftcPose.x, tag.ftcPose.y, tag.ftcPose.z, tag.ftcPose.roll, tag.ftcPose.pitch, tag.ftcPose.yaw);
                 } else {
-                    oClawCheck = true;
-                    oArmS.setPosition(0.4);
-                    oClawS.setPosition(0);
-                }
-                if (gamepad2.left_bumper) {
-                    oHandS.setPosition(oHandS.getPosition() - 0.02);
-                } else if (gamepad2.right_bumper) {
-                    oHandS.setPosition(oHandS.getPosition() + 0.02);
+                    telemetry.addData("Tag detected, but ftcPose is null", tagProcessor.getDetections().get(0).ftcPose);
                 }
             } else {
-                leftOrizontalSlider.setTargetPosition(0);
-                rightOrizontalSlider.setTargetPosition(0);
-                oArmS.setPosition(0.08);
-                oHandS.setPosition(-.4);
+                telemetry.addLine("No AprilTags detected");
             }
 
-            if (gamepad2.circle) {
-                if (vClawCheck) {
-                    vClawCheck = false;
-                    vClawTime = getRuntime();
-                    vArmS.setPosition(0.6);
-                }
-                if (getRuntime() - vClawTime > 0.7) {
-                    vClawS.setPosition(1);
-                }
-                if (getRuntime() - vClawTime > 1.5) {
-                    oClawS.setPosition(0);
-                }
-                if (getRuntime() - vClawTime > 2) {
-                    leftVerticalSlider.setPower(1);
-                    rightVerticalSlider.setPower(1);
-                    if (gamepad2.right_trigger > 0.1) {
-                        vHandS.setPosition(.2);
-                        vArmS.setPosition(0.24);
-                        leftVerticalSlider.setTargetPosition(3800);
-                        rightVerticalSlider.setTargetPosition(3800);
-                    } else {
-                        vHandS.setPosition(0);
-                        vArmS.setPosition(0.05);
-                        leftVerticalSlider.setTargetPosition(0);
-                        rightVerticalSlider.setTargetPosition(0);
-                    }
-                }
-                if (getRuntime() - vClawTime > 4 && gamepad2.left_trigger >= 0.1) {
-                    vClawS.setPosition(0.6);
-                }
-
-            } else if (gamepad2.square) {
-                if (vClawCheck2) {
-                    vClawCheck2 = false;
-                    vClawTime2 = getRuntime();
-                    vArmS.setPosition(0.06);
-                    vHandS.setPosition(.3);
-                }
-                if (gamepad2.left_trigger >= 0.1) {
-                    vClawS.setPosition(.6);
-                } else {
-                    vClawS.setPosition(1);
-                }
-                if (gamepad2.cross) {
-                    vHandS.setPosition(.4);
-                    vArmS.setPosition(0.2);
-                    leftVerticalSlider.setPower(1);
-                    rightVerticalSlider.setPower(1);
-                    leftVerticalSlider.setTargetPosition(1000);
-                    rightVerticalSlider.setTargetPosition(1000);
-                }
-            } else {
-                vClawCheck = true;
-                vClawCheck2 = true;
-                vHandS.setPosition(0.4);
-                vArmS.setPosition(0.49);
-                vClawS.setPosition(0.6);
-                leftVerticalSlider.setPower(1);
-                rightVerticalSlider.setPower(1);
-                leftVerticalSlider.setTargetPosition(0);
-                rightVerticalSlider.setTargetPosition(0);
-                if (!leftVerticalSlider.isBusy() && !rightVerticalSlider.isBusy()) {
-                    leftVerticalSlider.setPower(0);
-                    rightVerticalSlider.setPower(0);
-                }
-            }
-
-            if (gamepad1.left_bumper) {
-                fact = 0.5;
-            } else if (gamepad1.left_trigger >= 0.1){
-                fact = 1;
-            } else {
-                fact = 0.7;
-            }
-
+            telemetry.addData("lra", "l: %6d r: %6d a: %6d", cLP, cRP, cAP);
+            telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(t));
+            telemetry.addData("loop", "%.1f ms", timer.milliseconds());
             telemetry.update();
+            timer.reset();
         }
     }
 
@@ -249,55 +178,36 @@ public class auto extends LinearOpMode {
 
             double o1 = p * cos / max, o2 = p * sin / max;
 
-            //double[] c = correction();
-
             //lf, lb, rf, rb
-            return new double[]{o1, o2/**c[0]*/, o2 /**c[1]*/, o1/**c[1]*/};
+            return new double[]{o1, o2, o2, o1};
         } else {
-            //Rotazione ->
+            //Rotation ->
             return new double[]{rX, rX, -rX, -rX};
         }
     }
 
     private double getAng(double a, int dir) {
-        return 0.5 + 1f/135f*a*dir; //1dx -1sx(il lato brutto)
+        return 0.5 + 1f/135f*a*dir; //1dx -1sx
     }
 
     private void odometry(ctx ctx) {
-        int dR = -(ctx.e2.getCurrentPosition() - oRP), dL = ctx.e1.getCurrentPosition() - oLP, dA = ctx.e3.getCurrentPosition() - oAP;
         double x = pos[0], y = pos[1], t = pos[2];
 
-        double dC = ((double)(dL-dR)*(Math.cos(a)))*cm*2*Math.PI;
-        double dt = dC/(2f*Math.PI*P);
-        t+=dt;
+        oRP = cRP; oLP = cLP; oAP = cAP;
+        cRP = -ctx.e2.getCurrentPosition(); cLP = -ctx.e1.getCurrentPosition(); cAP = ctx.e3.getCurrentPosition();
 
-        double dx = ((double) (dL + dR)/2f*Math.sin(t)+dA*Math.cos(t))*cm;
-        double dy = ((double) (dL + dR)/2f*Math.cos(t)+dA*Math.sin(t))*cm;
-        x+=dx*2f;
-        y+=dy*2f;
+        int dN1 = cLP - oLP, dN2 = cRP - oRP, dN3 = cAP - oAP;
 
-        oRP = ctx.e2.getCurrentPosition(); oLP = ctx.e1.getCurrentPosition(); oAP = ctx.e3.getCurrentPosition();
+        double dT = cmTickRatio * (dN2 - dN1) / L;
+        double dX = cmTickRatio * (dN1 + dN2) / 2.0;
+        double dY = cmTickRatio * (dN3 - (dN2 - dN1) * B / L);
+
+        double theta = t + dT/2.0;
+        x += dX * Math.cos(theta) - dY * Math.sin(theta);
+        y += dX * Math.sin(theta) + dY * Math.cos(theta);
+        t += dT;
+
         pos[0]=x; pos[1] = y; pos[2] = t;
-    }
-
-    private double[] processRawCtr(double lX, double lY) {
-        double ctrAngle = Math.atan2(lY, lX);
-        telemetry.addData("cA", ctrAngle);
-        double fnlAngle = ctrAngle + pos[2];
-        telemetry.addData("fA", fnlAngle);
-        return new double[]{lX * Math.cos(fnlAngle), lY * Math.sin(fnlAngle)};
-    }
-
-    private double[] correction() {
-        double dt = pos[2] - oT;
-
-        double c = 1-0.1*dt/correctionFact;
-
-        if (dt < 0) {
-            return new double[] {1, c};
-        } else {
-            return new double[] {c, 1};
-        }
     }
 
     static class ctx {
@@ -318,56 +228,5 @@ public class auto extends LinearOpMode {
             this.e2 = e2;
             this.e3 = e3;
         }
-    }
-
-    private void goToPoint(double targetX, double targetY, ctx ctx) {
-        odometry(ctx);
-        double x, y, sX = pos[0], sY = pos[1];
-        double dx = Math.abs(targetX - sX), dy = Math.abs(targetY - sY);
-        double distance = Math.hypot(dx, dy), cD = distance;
-
-        double a = Math.atan2(targetY - sY, targetX - sX);
-        double[] inputs = processRawCtr(Math.cos(a), Math.sin(a));
-        do {
-            double fact = Math.min(.4, cD/distance);
-            double[] MotArr = MotorOut(inputs[0], inputs[1], 0, 0);
-            ctx.rFd.setPower(MotArr[0] * fact);
-            ctx.lBd.setPower(MotArr[1] * fact);
-            ctx.rFd.setPower(MotArr[3] * fact);
-            ctx.rBd.setPower(MotArr[2] * fact);
-
-            odometry(ctx);
-            x = pos[0]; y=pos[1];
-            dx-=x; dy-=y;
-            cD = Math.hypot(dx,dy);
-        } while (cD < distance);
-
-        ctx.rFd.setPower(0);
-        ctx.lBd.setPower(0);
-        ctx.rFd.setPower(0);
-        ctx.rBd.setPower(0);
-    }
-
-    private void Align(double targetA, ctx ctx) {
-        odometry(ctx);
-        double sA = pos[2];
-        double sdA = targetA - sA, dA = sdA;
-
-        do {
-            double fact = Math.min(.2, (dA/sdA)/2);
-            double[] MotArr = MotorOut(0, 0, fact*(dA/Math.abs(dA)), 0);
-            ctx.rFd.setPower(MotArr[0] * fact);
-            ctx.lBd.setPower(MotArr[1] * fact);
-            ctx.rFd.setPower(MotArr[3] * fact);
-            ctx.rBd.setPower(MotArr[2] * fact);
-
-            odometry(ctx);
-            dA = targetA - pos[2];
-        } while(dA < 0);
-
-        ctx.rFd.setPower(0);
-        ctx.lBd.setPower(0);
-        ctx.rFd.setPower(0);
-        ctx.rBd.setPower(0);
     }
 }

@@ -7,12 +7,20 @@ import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+import org.firstinspires.ftc.vision.apriltag.AprilTagLibrary;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @TeleOp(name="MainDrive", group="Main")
 public class main extends LinearOpMode {
@@ -33,10 +41,18 @@ public class main extends LinearOpMode {
         //---
 
         //--- Camera Init ---
+        AprilTagLibrary tagLibrary = new AprilTagLibrary.Builder()
+                .addTag(21, "jesus", 41, DistanceUnit.CM)
+                .build();
+
         AprilTagProcessor tagProcessor = new AprilTagProcessor.Builder()
+                .setTagLibrary(tagLibrary)
                 .setDrawAxes(true)
                 .setDrawTagOutline(true)
                 .setDrawTagID(true)
+                .setDrawCubeProjection(true)
+                .setLensIntrinsics(629.694, 629.694, 358.384, 256.314)
+                .setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
                 .build();
 
         VisionPortal visionPortal = new VisionPortal.Builder()
@@ -46,7 +62,20 @@ public class main extends LinearOpMode {
                 .enableLiveView(true)
                 .build();
 
-        FtcDashboard.getInstance().startCameraStream(visionPortal, 30);
+        setManualExposure(visionPortal, 2, 250);
+        FtcDashboard.getInstance().startCameraStream(visionPortal, 60);
+        //---
+
+        //--- Odometry Encoders Init ---
+        DcMotor odoL = hardwareMap.get(DcMotor.class, "lb");
+        DcMotor odoR = hardwareMap.get(DcMotor.class, "rb");
+        DcMotor odoA = hardwareMap.get(DcMotor.class, "lf");
+        odoL.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        odoR.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        odoA.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        odoL.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        odoR.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        odoA.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         //---
 
         //--- DriveMotors Init ---
@@ -72,10 +101,11 @@ public class main extends LinearOpMode {
         //---
 
         //--- Motors and Servos Init ---
-        /*
-        DcMotor dcMotor = hardwareMap.get(DcMotor.class, "DcMotorName");
-        Servo servo = hardwareMap.get(Servo.class, "servoName");
 
+        //DcMotor dcMotor = hardwareMap.get(DcMotor.class, "DcMotorName");
+        Servo testServo = hardwareMap.get(Servo.class, "gobildatest");
+
+        /*
         dcMotor.setDirection(DcMotor.Direction.FORWARD);
         dcMotor.setTargetPosition(0);
         dcMotor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
@@ -83,18 +113,6 @@ public class main extends LinearOpMode {
         dcMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         dcMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         */
-        //---
-
-        //--- Odometry Encoders Init ---
-        DcMotor odoL = hardwareMap.get(DcMotor.class, "odo1");
-        DcMotor odoR = hardwareMap.get(DcMotor.class, "odo2");
-        DcMotor odoA = hardwareMap.get(DcMotor.class, "odo3");
-        odoL.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        odoR.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        odoA.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        odoL.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        odoR.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        odoA.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         //---
 
         telemetry.addData("Status", "Initialized");
@@ -106,7 +124,8 @@ public class main extends LinearOpMode {
         waitForStart();
         timer.reset();
 
-        double speed = .7;
+        double speed = .65;
+
         while (opModeIsActive()) {
             odometry(ctx);
 
@@ -121,15 +140,40 @@ public class main extends LinearOpMode {
 
             double[] MotArr = MotorOut(-lX, -lY, rX, rY);
 
+            telemetry.addData("mariio", "%.2f %.2f %.2f %.2f", MotArr[0], MotArr[1], MotArr[2], MotArr[3]);
+
             ctx.lFd.setPower(MotArr[0] * speed);
             ctx.lBd.setPower(MotArr[1] * speed);
             ctx.rFd.setPower(MotArr[2] * speed);
             ctx.rBd.setPower(MotArr[3] * speed);
 
             if (!tagProcessor.getDetections().isEmpty()) {
-                AprilTagDetection tag = tagProcessor.getDetections().get(0);
+                List<AprilTagDetection> tags = tagProcessor.getDetections();
+                for (AprilTagDetection tag : tags) {
+                    if (tag.metadata != null) {
+                        telemetry.addData("CameraTag", "x: %.2f y: %.2f z: %.2f roll: %.2f pitch: %.2f yaw: %.2f", tag.ftcPose.x, tag.ftcPose.y, tag.ftcPose.z, tag.ftcPose.roll, tag.ftcPose.pitch, tag.ftcPose.yaw);
 
-                telemetry.addData("CameraTag", "x: %.2f y: %.2f z: %.2f roll: %.2f pitch: %.2f yaw: %.2f",  tag.ftcPose.x, tag.ftcPose.y, tag.ftcPose.z, tag.ftcPose.roll, tag.ftcPose.pitch, tag.ftcPose.yaw);
+                        double tx = tag.ftcPose.x, ty = tag.ftcPose.y;
+                        double ta = Math.atan2(tx, ty)*360/(2*Math.PI);
+
+                        testServo.setPosition(getAng(ta, 1));
+
+                        telemetry.addData("test", getAng(ta, 1));
+                    } else {
+                        telemetry.addData("Tag detected, but ftcPose is null", tagProcessor.getDetections().get(0).ftcPose);
+                    }
+                }
+            } else {
+                telemetry.addLine("No AprilTags detected");
+                testServo.setPosition(0.5);
+            }
+
+            if (gamepad1.left_bumper) {
+                speed  = 0.4;
+            } else if (gamepad1.left_trigger >= 0.1){
+                speed  = 1;
+            } else {
+                speed  = 0.7;
             }
 
             telemetry.addData("lra", "l: %6d r: %6d a: %6d", cLP, cRP, cAP);
@@ -158,7 +202,7 @@ public class main extends LinearOpMode {
     }
 
     private double getAng(double a, int dir) {
-        return 0.5 + 1f/135f*a*dir; //1dx -1sx
+        return 0.5 + 1f/150f*a*dir; //1dx -1sx
     }
 
     private void odometry(ctx ctx) {
@@ -179,6 +223,40 @@ public class main extends LinearOpMode {
         t += dT;
 
         pos[0]=x; pos[1] = y; pos[2] = t;
+    }
+
+    private void setManualExposure(VisionPortal visionPortal, int exposureMS, int gain) {
+        // Wait for the camera to be open, then use the controls
+
+        if (visionPortal == null) {
+            return;
+        }
+
+        // Make sure camera is streaming before we try to set the exposure controls
+        if (visionPortal.getCameraState() != VisionPortal.CameraState.STREAMING) {
+            telemetry.addData("Camera", "Waiting");
+            telemetry.update();
+            while (!isStopRequested() && (visionPortal.getCameraState() != VisionPortal.CameraState.STREAMING)) {
+                sleep(20);
+            }
+            telemetry.addData("Camera", "Ready");
+            telemetry.update();
+        }
+
+        // Set camera controls unless we are stopping.
+        if (!isStopRequested())
+        {
+            ExposureControl exposureControl = visionPortal.getCameraControl(ExposureControl.class);
+            if (exposureControl.getMode() != ExposureControl.Mode.Manual) {
+                exposureControl.setMode(ExposureControl.Mode.Manual);
+                sleep(50);
+            }
+            exposureControl.setExposure((long)exposureMS, TimeUnit.MILLISECONDS);
+            sleep(20);
+            GainControl gainControl = visionPortal.getCameraControl(GainControl.class);
+            gainControl.setGain(gain);
+            sleep(20);
+        }
     }
 
     static class ctx {
