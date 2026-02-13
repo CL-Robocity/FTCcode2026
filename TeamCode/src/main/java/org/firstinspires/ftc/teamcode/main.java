@@ -55,7 +55,7 @@ public class main extends LinearOpMode {
                 .setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
                 .build();
 
-        VisionPortal visionPortal = new VisionPortal.Builder()
+        /*VisionPortal visionPortal = new VisionPortal.Builder()
                 .addProcessor(tagProcessor)
                 .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
                 .setCameraResolution(new Size(640, 480))
@@ -63,7 +63,7 @@ public class main extends LinearOpMode {
                 .build();
 
         setManualExposure(visionPortal, 2, 250);
-        FtcDashboard.getInstance().startCameraStream(visionPortal, 60);
+        FtcDashboard.getInstance().startCameraStream(visionPortal, 60);*/
         //---
 
         //--- Odometry Encoders Init ---
@@ -77,6 +77,7 @@ public class main extends LinearOpMode {
         odoR.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         odoA.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         //---
+
 
         //--- DriveMotors Init ---
         DcMotor lfD = hardwareMap.get(DcMotor.class, "lf");
@@ -102,8 +103,8 @@ public class main extends LinearOpMode {
 
         //--- Motors and Servos Init ---
 
-        //DcMotor dcMotor = hardwareMap.get(DcMotor.class, "DcMotorName");
-        Servo testServo = hardwareMap.get(Servo.class, "gobildatest");
+        /*DcMotor testMotor = hardwareMap.get(DcMotor.class, "luigi");
+        Servo testServo = hardwareMap.get(Servo.class, "gobildatest");*/
 
         /*
         dcMotor.setDirection(DcMotor.Direction.FORWARD);
@@ -156,7 +157,7 @@ public class main extends LinearOpMode {
                         double tx = tag.ftcPose.x, ty = tag.ftcPose.y;
                         double ta = Math.atan2(tx, ty)*360/(2*Math.PI);
 
-                        testServo.setPosition(getAng(ta, 1));
+                        //testServo.setPosition(getAng(ta, 1));
 
                         telemetry.addData("test", getAng(ta, 1));
                     } else {
@@ -165,7 +166,7 @@ public class main extends LinearOpMode {
                 }
             } else {
                 telemetry.addLine("No AprilTags detected");
-                testServo.setPosition(0.5);
+                //testServo.setPosition(0.5);
             }
 
             if (gamepad1.left_bumper) {
@@ -209,17 +210,17 @@ public class main extends LinearOpMode {
         double x = pos[0], y = pos[1], t = pos[2];
 
         oRP = cRP; oLP = cLP; oAP = cAP;
-        cRP = -ctx.e2.getCurrentPosition(); cLP = -ctx.e1.getCurrentPosition(); cAP = ctx.e3.getCurrentPosition();
+        cRP = -ctx.e2.getCurrentPosition(); cLP = ctx.e1.getCurrentPosition(); cAP = ctx.e3.getCurrentPosition();
 
         int dN1 = cLP - oLP, dN2 = cRP - oRP, dN3 = cAP - oAP;
 
         double dT = cmTickRatio * (dN2 - dN1) / L;
         double dX = cmTickRatio * (dN1 + dN2) / 2.0;
-        double dY = cmTickRatio * (dN3 - (dN2 - dN1) * B / L);
+        double dY = cmTickRatio * (dN3 - dT * B);
 
         double theta = t + dT/2.0;
-        x += dX * Math.cos(theta) - dY * Math.sin(theta);
-        y += dX * Math.sin(theta) + dY * Math.cos(theta);
+        x += (dX * Math.cos(theta) - dY * Math.sin(theta));
+        y += (dX * Math.sin(theta) + dY * Math.cos(theta));
         t += dT;
 
         pos[0]=x; pos[1] = y; pos[2] = t;
