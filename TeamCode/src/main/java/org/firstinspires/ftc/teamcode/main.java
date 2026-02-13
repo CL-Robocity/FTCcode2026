@@ -9,6 +9,8 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
@@ -18,6 +20,7 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagLibrary;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
+import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -27,17 +30,24 @@ public class main extends LinearOpMode {
 
     ElapsedTime timer = new ElapsedTime();
 
-    int cRP, oRP, cLP, oLP, cAP, oAP; //current position, old position -> Left, Right, Aux
+    double oParallel, oPerp, oHeading; //current position, old position -> Left, Right, Aux
 
     //173,5 180,5
-    double L = 17.7, B = 8.9, R = 2, N = 8192;
+    double SPEED = .5;
+    double PaY = 1, PrX = 1, R = 2, N = 8192, KP = 2;
+
     double cmTickRatio = 2 * Math.PI * R / N;
-    double[] pos = {0, 0, 0};
+    final double[] pos = {0, 0, 0};
+
+    boolean hLock = false;
+    double targetH = 0;
 
     @Override
-    public void runOpMode() {
+    public void runOpMode() throws InterruptedException {
         //--- Dashboard Init ---
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
+        telemetry.addData("Status", "ASPETTA UN ATTIMO");
+        telemetry.update();
         //---
 
         //--- Camera Init ---
@@ -55,7 +65,7 @@ public class main extends LinearOpMode {
                 .setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
                 .build();
 
-        /*VisionPortal visionPortal = new VisionPortal.Builder()
+        VisionPortal visionPortal = new VisionPortal.Builder()
                 .addProcessor(tagProcessor)
                 .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
                 .setCameraResolution(new Size(640, 480))
@@ -63,21 +73,33 @@ public class main extends LinearOpMode {
                 .build();
 
         setManualExposure(visionPortal, 2, 250);
-        FtcDashboard.getInstance().startCameraStream(visionPortal, 60);*/
+        FtcDashboard.getInstance().startCameraStream(visionPortal, 60);
+        //---
+
+        //--- IMU ---
+        IMU imu = hardwareMap.get(IMU.class, "imu");
+
+        IMU.Parameters parameters = new IMU.Parameters(
+                new com.qualcomm.hardware.rev.RevHubOrientationOnRobot(
+                        RevHubOrientationOnRobot.LogoFacingDirection.LEFT,
+                        RevHubOrientationOnRobot.UsbFacingDirection.DOWN
+                )
+        );
+
+        imu.initialize(parameters);
+        imu.resetYaw();
         //---
 
         //--- Odometry Encoders Init ---
-        DcMotor odoL = hardwareMap.get(DcMotor.class, "lb");
-        DcMotor odoR = hardwareMap.get(DcMotor.class, "rb");
-        DcMotor odoA = hardwareMap.get(DcMotor.class, "lf");
-        odoL.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        odoR.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        odoA.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        odoL.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        odoR.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        odoA.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        //---
+        DcMotor odoParallel = hardwareMap.get(DcMotor.class, "lb");
+        DcMotor odoPerp = hardwareMap.get(DcMotor.class, "rb");
 
+        odoParallel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        odoPerp.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+
+        odoParallel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        odoPerp.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        //---
 
         //--- DriveMotors Init ---
         DcMotor lfD = hardwareMap.get(DcMotor.class, "lf");
@@ -90,10 +112,10 @@ public class main extends LinearOpMode {
         rbD.setDirection(DcMotor.Direction.FORWARD);
         rfD.setDirection(DcMotor.Direction.FORWARD);
 
-        lfD.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        lbD.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        rbD.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        rfD.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        lfD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        lbD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        rbD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        rfD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
         lfD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         lbD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
@@ -116,24 +138,55 @@ public class main extends LinearOpMode {
         */
         //---
 
-        telemetry.addData("Status", "Initialized");
+        //Robot Context Init
+        ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
+
+        //--- Odo Thread Init
+
+        Thread odometryThread = new Thread(() -> {
+            final long periodNs = 5_000_000; // 200 Hz
+            Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
+            long nextTime = System.nanoTime() + periodNs;
+
+            while (!isStopRequested()) {
+                odometry(ctx);
+
+                long sleepTime = nextTime - System.nanoTime();
+
+                if (sleepTime > 0) {
+                    try {
+                    TimeUnit.NANOSECONDS.sleep(sleepTime);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                } else {
+                    nextTime = System.nanoTime();
+                }
+            }
+        });
+
+        //---
+        double speed = SPEED;
+
+        telemetry.addData("Status", "VAII");
         telemetry.update();
 
-        //Robot Context Init
-        ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoL, odoR, odoA);
-
         waitForStart();
+
+        odometryThread.start();
         timer.reset();
 
-        double speed = .65;
-
         while (opModeIsActive()) {
-            odometry(ctx);
+            double x, y, h;
+            synchronized(pos) {
+                x = pos[0];
+                y = pos[1];
+                h = pos[2];
+            }
 
-            double x = pos[0], y = pos[1], t = pos[2];
-
+            //--- Mecanum Drive
             double lX = gamepad1.left_stick_x, lY = -gamepad1.left_stick_y;
-            lX = Math.abs(lX) < .4 ? 0 : lX; //dead zone
+            lX = Math.abs(lX) < .4 ? 0 : lX; //TODO -> Tune Dead Zone :)
             lY = Math.abs(lY) < .4 ? 0 : lY;
             double rX = gamepad1.right_stick_x, rY = -gamepad1.right_stick_y;
             rX = Math.abs(rX) < .2 ? 0 : rX;
@@ -141,65 +194,82 @@ public class main extends LinearOpMode {
 
             double[] MotArr = MotorOut(-lX, -lY, rX, rY);
 
-            telemetry.addData("mariio", "%.2f %.2f %.2f %.2f", MotArr[0], MotArr[1], MotArr[2], MotArr[3]);
+            telemetry.addData("DriveMotors", "%.2f %.2f %.2f %.2f", MotArr[0], MotArr[1], MotArr[2], MotArr[3]);
 
             ctx.lFd.setPower(MotArr[0] * speed);
             ctx.lBd.setPower(MotArr[1] * speed);
             ctx.rFd.setPower(MotArr[2] * speed);
             ctx.rBd.setPower(MotArr[3] * speed);
+            //---
 
+            //--- QR Code ---
             if (!tagProcessor.getDetections().isEmpty()) {
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
                     if (tag.metadata != null) {
-                        telemetry.addData("CameraTag", "x: %.2f y: %.2f z: %.2f roll: %.2f pitch: %.2f yaw: %.2f", tag.ftcPose.x, tag.ftcPose.y, tag.ftcPose.z, tag.ftcPose.roll, tag.ftcPose.pitch, tag.ftcPose.yaw);
-
                         double tx = tag.ftcPose.x, ty = tag.ftcPose.y;
                         double ta = Math.atan2(tx, ty)*360/(2*Math.PI);
 
-                        //testServo.setPosition(getAng(ta, 1));
-
-                        telemetry.addData("test", getAng(ta, 1));
-                    } else {
-                        telemetry.addData("Tag detected, but ftcPose is null", tagProcessor.getDetections().get(0).ftcPose);
+                        telemetry.addData("QRcode", ta);
                     }
                 }
             } else {
                 telemetry.addLine("No AprilTags detected");
-                //testServo.setPosition(0.5);
             }
+            //---
+
+            //--- CODE ---
+
+
+
+            //---
 
             if (gamepad1.left_bumper) {
-                speed  = 0.4;
-            } else if (gamepad1.left_trigger >= 0.1){
                 speed  = 1;
+            } else if (gamepad1.left_trigger >= 0.1){
+                speed  = (SPEED - 0.1)*(1 - gamepad1.left_trigger) + 0.1;
             } else {
-                speed  = 0.7;
+                speed  = SPEED;
             }
 
-            telemetry.addData("lra", "l: %6d r: %6d a: %6d", cLP, cRP, cAP);
-            telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(t));
+            telemetry.addData("lra", "l: %6d r: %6d a: %6d", oParallel, oPerp, oHeading);
+            telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("loop", "%.1f ms", timer.milliseconds());
             telemetry.update();
             timer.reset();
         }
+
+        if (odometryThread.isAlive()) {
+            odometryThread.interrupt();
+            odometryThread.join();
+        }
     }
 
     private double[] MotorOut(double lX, double lY, double rX, double rY) {
-        if (rX == 0) {
-            double a = Math.atan2(lY, lX), p = Math.hypot(lX, lY);
+        double h = pos[2];
+        double rot;
+        if (Math.abs(rX) < .05) {
 
-            double sin = Math.sin(a - Math.PI / 4), cos = Math.cos(a - Math.PI / 4);
-            double max = Math.max(Math.abs(sin), Math.abs(cos));
+            if (!hLock) {
+                targetH = h;
+                hLock = true;
+            }
 
-            double o1 = p * cos / max, o2 = p * sin / max;
-
-            //lf, lb, rf, rb
-            return new double[]{o1, o2, o2, o1};
+            double e = angleWrap(targetH - h);
+            rot = e * KP;
         } else {
-            //Rotation ->
-            return new double[]{rX, rX, -rX, -rX};
+            hLock = false;
+            rot = rX;
+            targetH = h;
         }
+
+        double lf = lY + lX + rot;
+        double lb = lY - lX + rot;
+        double rf = lY - lX - rot;
+        double rb = lY + lX - rot;
+
+        double max = Math.max(1, Math.max(Math.abs(lf), Math.max(Math.abs(lb), Math.max(Math.abs(rf), Math.abs(rb)))));
+        return new double[]{lf/max, lb/max, rf/max, rb/max}; //lf, lb, rf, rb
     }
 
     private double getAng(double a, int dir) {
@@ -207,23 +277,41 @@ public class main extends LinearOpMode {
     }
 
     private void odometry(ctx ctx) {
-        double x = pos[0], y = pos[1], t = pos[2];
+        double parallel = ctx.odoParallel.getCurrentPosition() * cmTickRatio;
+        double perp = ctx.odoPerp.getCurrentPosition() * cmTickRatio;
 
-        oRP = cRP; oLP = cLP; oAP = cAP;
-        cRP = -ctx.e2.getCurrentPosition(); cLP = ctx.e1.getCurrentPosition(); cAP = ctx.e3.getCurrentPosition();
+        double imuHeading = getHeading(ctx);
 
-        int dN1 = cLP - oLP, dN2 = cRP - oRP, dN3 = cAP - oAP;
+        double dParallel = parallel - oParallel;
+        double dPerp = perp - oPerp;
+        double dHeading = angleWrap(imuHeading - oHeading);
 
-        double dT = cmTickRatio * (dN2 - dN1) / L;
-        double dX = cmTickRatio * (dN1 + dN2) / 2.0;
-        double dY = cmTickRatio * (dN3 - dT * B);
+        oParallel = parallel;
+        oPerp = perp;
+        oHeading = imuHeading;
 
-        double theta = t + dT/2.0;
-        x += (dX * Math.cos(theta) - dY * Math.sin(theta));
-        y += (dX * Math.sin(theta) + dY * Math.cos(theta));
-        t += dT;
+        double corrX = dParallel - dHeading * PaY;
+        double corrY = dPerp + dHeading * PrX;
+        double midHeading = pos[2] + dHeading/2;
 
-        pos[0]=x; pos[1] = y; pos[2] = t;
+        double cos = Math.cos(midHeading), sin = Math.sin(midHeading);
+
+        synchronized(pos) {
+            pos[0] += corrX * cos - corrY * sin;
+            pos[1] += corrX * sin + corrY * cos;
+            pos[2] += dHeading;
+            pos[2] = angleWrap(pos[2]);
+        }
+    }
+
+    private double getHeading(ctx ctx) {
+        return ctx.imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
+    }
+
+    private double angleWrap(double angle) {
+        while (angle > Math.PI) angle -= 2*Math.PI;
+        while (angle < Math.PI) angle += 2*Math.PI;
+        return angle;
     }
 
     private void setManualExposure(VisionPortal visionPortal, int exposureMS, int gain) {
@@ -265,18 +353,18 @@ public class main extends LinearOpMode {
         public final DcMotor lBd;
         public final DcMotor rFd;
         public final DcMotor rBd;
-        public final DcMotor e1;
-        public final DcMotor e2;
-        public final DcMotor e3;
+        public final DcMotor odoParallel;
+        public final DcMotor odoPerp;
+        public final IMU imu;
 
-        public ctx(DcMotor lFd, DcMotor lBd, DcMotor rFd, DcMotor rBd, DcMotor e1, DcMotor e2, DcMotor e3) {
+        public ctx(DcMotor lFd, DcMotor lBd, DcMotor rFd, DcMotor rBd, DcMotor odoParallel, DcMotor odoPerp, IMU imu) {
             this.lFd = lFd;
             this.lBd = lBd;
             this.rFd = rFd;
             this.rBd = rBd;
-            this.e1 = e1;
-            this.e2 = e2;
-            this.e3 = e3;
+            this.odoParallel = odoParallel;
+            this.odoPerp = odoPerp;
+            this.imu = imu;
         }
     }
 }
