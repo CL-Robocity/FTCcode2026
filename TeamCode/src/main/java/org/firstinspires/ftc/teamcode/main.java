@@ -40,7 +40,7 @@ public class main extends LinearOpMode {
     final double[] pos = {0, 0, 0};
 
     boolean hLock = false;
-    double targetH = 0;
+    double targetH = 0, hoodPos = .5;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -52,6 +52,8 @@ public class main extends LinearOpMode {
 
         //--- Camera Init ---
         AprilTagLibrary tagLibrary = new AprilTagLibrary.Builder()
+                .addTag(20, "Blu", 41, DistanceUnit.CM)
+                .addTag(24, "Red", 41, DistanceUnit.CM)
                 .addTag(21, "jesus", 41, DistanceUnit.CM)
                 .build();
 
@@ -72,8 +74,8 @@ public class main extends LinearOpMode {
                 .enableLiveView(true)
                 .build();
 
-        setManualExposure(visionPortal, 2, 250);
-        FtcDashboard.getInstance().startCameraStream(visionPortal, 60);
+        setManualExposure(visionPortal, 1, 200);
+        FtcDashboard.getInstance().startCameraStream(visionPortal, 24);
         //---
 
         //--- IMU ---
@@ -125,8 +127,13 @@ public class main extends LinearOpMode {
 
         //--- Motors and Servos Init ---
 
-        /*DcMotor testMotor = hardwareMap.get(DcMotor.class, "luigi");
-        Servo testServo = hardwareMap.get(Servo.class, "gobildatest");*/
+        DcMotor gianluca = hardwareMap.get(DcMotor.class, "gianluca");
+        DcMotor in = hardwareMap.get(DcMotor.class, "in");
+        DcMotor turetta = hardwareMap.get(DcMotor.class, "turetta");
+
+        Servo levetta = hardwareMap.get(Servo.class, "levetta");
+        Servo outL = hardwareMap.get(Servo.class, "outL");
+        Servo outR = hardwareMap.get(Servo.class, "outR");
 
         /*
         dcMotor.setDirection(DcMotor.Direction.FORWARD);
@@ -167,6 +174,8 @@ public class main extends LinearOpMode {
 
         //---
         double speed = SPEED;
+        long levettaTime = 0, levettaWaiter = 0;
+        boolean levettaBool = false;
 
         telemetry.addData("Status", "VAII");
         telemetry.update();
@@ -192,7 +201,7 @@ public class main extends LinearOpMode {
             rX = Math.abs(rX) < .2 ? 0 : rX;
             rY = Math.abs(rY) < .2 ? 0 : rY;
 
-            double[] MotArr = MotorOut(-lX, -lY, rX, rY);
+            double[] MotArr = MotorOut(lX, lY, rX, rY);
 
             telemetry.addData("DriveMotors", "%.2f %.2f %.2f %.2f", MotArr[0], MotArr[1], MotArr[2], MotArr[3]);
 
@@ -218,8 +227,63 @@ public class main extends LinearOpMode {
             }
             //---
 
-            //--- CODE ---
+            //--- CODE --
+            //IL BRO CHE SPARA
 
+            gianluca.setPower(gamepad2.right_trigger);
+            in.setPower(gamepad2.left_trigger);
+
+            if (gamepad2.cross && levettaWaiter > 0) {
+
+            }
+
+            if (!gamepad2.cross) {
+                levettaWaiter = System.currentTimeMillis();
+            }
+
+            if (gamepad2.cross && !levettaBool) {
+                levettaTime = System.currentTimeMillis();
+                levettaBool = true;
+            }
+
+            if (levettaBool) {
+                long dt = System.currentTimeMillis() - levettaTime;
+                if (dt < 300) {
+                    levetta.setPosition(.73);
+                } else if (dt < 900) {
+                    levetta.setPosition(0.43);
+                } else {
+                    levetta.setPosition(0.43);
+                    levettaBool = false;
+                }
+
+                if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 300) {
+                    in.setPower(1);
+                } else {
+                    in.setPower(0);
+                }
+
+            } else {
+                levetta.setPosition(0.44);
+            }
+
+            if (gamepad2.dpad_down && hoodPos > 0.47) {
+                hoodPos-=0.01;
+            }
+            if (gamepad2.dpad_up && hoodPos < 0.8) {
+                hoodPos+=0.01;
+            }
+
+            outL.setPosition(hoodPos);
+            outR.setPosition(1-hoodPos);
+
+            if (gamepad2.left_bumper) {
+                turetta.setPower(.2);
+            } else if (gamepad2.right_bumper) {
+                turetta.setPower(-.2);
+            } else {
+                turetta.setPower(0);
+            }
 
 
             //---
@@ -232,8 +296,8 @@ public class main extends LinearOpMode {
                 speed  = SPEED;
             }
 
-            telemetry.addData("lra", "l: %6d r: %6d a: %6d", oParallel, oPerp, oHeading);
-            telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
+            //telemetry.addData("lra", "l: %6d r: %6d a: %6d", oParallel, oPerp, oHeading);
+            //telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("loop", "%.1f ms", timer.milliseconds());
             telemetry.update();
             timer.reset();
@@ -243,6 +307,8 @@ public class main extends LinearOpMode {
             odometryThread.interrupt();
             odometryThread.join();
         }
+
+        visionPortal.close();
     }
 
     private double[] MotorOut(double lX, double lY, double rX, double rY) {
@@ -256,7 +322,8 @@ public class main extends LinearOpMode {
             }
 
             double e = angleWrap(targetH - h);
-            rot = e * KP;
+            //rot = e * KP;
+            rot = 0;
         } else {
             hLock = false;
             rot = rX;

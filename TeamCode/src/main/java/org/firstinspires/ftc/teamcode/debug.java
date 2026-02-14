@@ -5,6 +5,7 @@ import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
@@ -12,6 +13,7 @@ import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainCon
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
 
+import java.util.Date;
 import java.util.concurrent.TimeUnit;
 
 @TeleOp(name="FA_debug", group="Main")
@@ -32,9 +34,10 @@ public class debug extends LinearOpMode {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
         //---
         //--- DriveMotors Init ---
-        DcMotor fast = hardwareMap.get(DcMotor.class, "fast");
+        DcMotor fast = hardwareMap.get(DcMotor.class, "gianluca");
+        DcMotor fast1 = hardwareMap.get(DcMotor.class, "in");
 
-        Servo faster = hardwareMap.get(Servo.class, "faster");
+        Servo faster = hardwareMap.get(Servo.class, "levetta");
 
         fast.setDirection(DcMotor.Direction.FORWARD);
 
@@ -51,15 +54,15 @@ public class debug extends LinearOpMode {
 
         double speed = .65;
 
+        long time = 0;
+        boolean levetta = false;
+
         while (opModeIsActive()) {
 
-            if (gamepad1.right_trigger > 0) {
-                fast.setPower(gamepad1.right_trigger);
-            } else {
-                fast.setPower(-gamepad1.left_trigger);
-            }
+            fast.setPower(gamepad1.right_trigger);
+            fast1.setPower(gamepad1.left_trigger*.65);
 
-            if (gamepad1.cross) {
+            /*if (gamepad1.cross) {
                 faster.setPosition(0.5);
             }
             if (gamepad1.triangle){
@@ -67,10 +70,23 @@ public class debug extends LinearOpMode {
             }
             if (gamepad1.square){
                 faster.setPosition(1);
+            }*/
+
+            if (gamepad1.cross && !levetta) {
+                time = System.currentTimeMillis();
+                levetta = true;
             }
 
-            if(gamepad2.cross) {
-                faster.setPosition(0.8);
+            if (levetta) {
+                long dt = System.currentTimeMillis() - time;
+                if (dt < 250) {
+                    faster.setPosition(0.75);
+                } else if (dt < 650) {
+                    faster.setPosition(0.44);
+                } else {
+                    faster.setPosition(0.44);
+                    levetta = false;
+                }
             } else {
                 faster.setPosition(0.44);
             }
