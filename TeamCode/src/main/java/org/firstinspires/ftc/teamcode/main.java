@@ -8,9 +8,13 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
+import com.qualcomm.robotcore.hardware.NormalizedRGBA;
+import com.qualcomm.robotcore.hardware.DigitalChannel;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
@@ -38,6 +42,8 @@ public class main extends LinearOpMode {
 
     double cmTickRatio = 2 * Math.PI * R / N;
     final double[] pos = {0, 0, 0};
+
+    int turettaTarget = 90;
 
     boolean hLock = false;
     double targetH = 0, hoodPos = .5;
@@ -131,6 +137,8 @@ public class main extends LinearOpMode {
         DcMotor in = hardwareMap.get(DcMotor.class, "in");
         DcMotor turetta = hardwareMap.get(DcMotor.class, "turetta");
 
+        in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+
         Servo levetta = hardwareMap.get(Servo.class, "levetta");
         Servo outL = hardwareMap.get(Servo.class, "outL");
         Servo outR = hardwareMap.get(Servo.class, "outR");
@@ -143,6 +151,13 @@ public class main extends LinearOpMode {
         dcMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         dcMotor.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         */
+        //---
+
+        //Sensors
+
+        NormalizedColorSensor colore = hardwareMap.get(NormalizedColorSensor.class, "colors");
+        TouchSensor toccami = hardwareMap.get(TouchSensor.class, "toccami");
+
         //---
 
         //Robot Context Init
@@ -176,6 +191,13 @@ public class main extends LinearOpMode {
         double speed = SPEED;
         long levettaTime = 0, levettaWaiter = 0;
         boolean levettaBool = false;
+        double input;
+        double[] lastKnownQR = {-999, -999, 0};
+
+        int isWrapping = 0;
+        int wrapTarget = 0;
+
+        turretHoming(toccami, turetta);
 
         telemetry.addData("Status", "VAII");
         telemetry.update();
@@ -212,44 +234,67 @@ public class main extends LinearOpMode {
             //---
 
             //--- QR Code ---
+            input = 0;
             if (!tagProcessor.getDetections().isEmpty()) {
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
                     if (tag.metadata != null) {
                         double tx = tag.ftcPose.x, ty = tag.ftcPose.y;
-                        double ta = Math.atan2(tx, ty)*360/(2*Math.PI);
 
-                        telemetry.addData("QRcode", ta);
+                        if (gamepad2.triangle) {
+                            lastKnownQR[0] = tx;
+                            lastKnownQR[1] = ty;
+                            lastKnownQR[2] = 0;
+                        }
                     }
                 }
             } else {
                 telemetry.addLine("No AprilTags detected");
             }
+
+            lastKnownQR[2]++;
+            if (lastKnownQR[2] > 100) lastKnownQR[0] = -999;
+            if (Math.abs(lastKnownQR[0]) > 10 && lastKnownQR[0]!= -999) {
+                double trackSpeed = lastKnownQR[2] < 3 ? Math.pow(lastKnownQR[0], 2)/lastKnownQR[1] * 0.01 : 0.01;
+                telemetry.addData("TEST", trackSpeed);
+
+                if (Math.signum(lastKnownQR[0]) == 1) {input = -Math.min(0.2, Math.max(trackSpeed, 0.01));}
+                else {input = Math.min(0.2, Math.max(trackSpeed, 0.01));}
+            } else {
+                input = 0;
+            }
+            telemetry.addData("QRx", lastKnownQR[0]);
+            telemetry.addData("QRy", lastKnownQR[1]);
+
+            if (Math.abs(rX) > 0.05 && gamepad2.triangle) {
+                input = imu.getRobotAngularVelocity(AngleUnit.RADIANS).zRotationRate * -0.19285;
+            }
             //---
 
             //--- CODE --
+
             //IL BRO CHE SPARA
 
-            gianluca.setPower(gamepad2.right_trigger);
-            in.setPower(gamepad2.left_trigger);
-
-            if (gamepad2.cross && levettaWaiter > 0) {
-
-            }
+            if (!gamepad2.triangle) gianluca.setPower(gamepad2.right_trigger);
+            if (!levettaBool) in.setPower(gamepad2.left_trigger);
 
             if (!gamepad2.cross) {
                 levettaWaiter = System.currentTimeMillis();
             }
 
             if (gamepad2.cross && !levettaBool) {
+                in.setPower(1);
                 levettaTime = System.currentTimeMillis();
                 levettaBool = true;
             }
 
             if (levettaBool) {
+                in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
                 long dt = System.currentTimeMillis() - levettaTime;
+                NormalizedRGBA rgb = colore.getNormalizedColors();
+
                 if (dt < 300) {
-                    levetta.setPosition(.73);
+                    if (rgb.blue > 0.001) {levetta.setPosition(.75);}
                 } else if (dt < 900) {
                     levetta.setPosition(0.43);
                 } else {
@@ -265,6 +310,7 @@ public class main extends LinearOpMode {
 
             } else {
                 levetta.setPosition(0.44);
+                in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
             }
 
             if (gamepad2.dpad_down && hoodPos > 0.47) {
@@ -277,14 +323,57 @@ public class main extends LinearOpMode {
             outL.setPosition(hoodPos);
             outR.setPosition(1-hoodPos);
 
-            if (gamepad2.left_bumper) {
-                turetta.setPower(.2);
-            } else if (gamepad2.right_bumper) {
-                turetta.setPower(-.2);
-            } else {
-                turetta.setPower(0);
+            int TURRET_MAX = 2400;
+            int TURRET_MIN = -20;
+
+            if (!gamepad2.triangle) {
+                if (gamepad2.left_bumper) input = 0.2;
+                else if (gamepad2.right_bumper) input = -0.2;
             }
 
+            telemetry.addData("input", input);
+
+            int pos = turetta.getCurrentPosition();
+
+            if (isWrapping == 0 && pos >= TURRET_MAX && input > 0) {
+                isWrapping = -1;
+                wrapTarget = TURRET_MIN;
+                turetta.setTargetPosition(wrapTarget);
+                turetta.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+            }
+
+            else if (isWrapping == 0 && pos <= TURRET_MIN && input < 0) {
+                isWrapping = 1;
+                wrapTarget = TURRET_MAX;
+                turetta.setTargetPosition(wrapTarget);
+                turetta.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+            }
+
+            if (isWrapping != 0) {
+                if (Math.abs(rX) > 0.05 && gamepad2.triangle) {input = Math.pow(input, 2) * Math.signum(input) * 20;}
+                if (isWrapping == -1 && input > 0) wrapTarget+= (int) (input*20);
+                if (isWrapping == 1 && input < 0) wrapTarget+= (int) (input*20);
+                turetta.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+                int d = Math.min(Math.abs(wrapTarget - pos), Math.abs(isWrapping == 1 ? pos : TURRET_MAX-pos));
+
+                telemetry.addData("d", wrapTarget);
+
+                double wrapPower = d * 0.003;
+                wrapPower = Math.max(0.2, wrapPower);
+                wrapPower = Math.min(1, wrapPower);
+
+                if ((isWrapping == 1 && pos > wrapTarget) || (isWrapping == -1 && pos < wrapTarget)) {
+                    isWrapping = 0;
+
+                    turetta.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+                    turetta.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+                }
+
+                turetta.setPower(wrapPower);
+            } else {
+                if (gamepad2.triangle) turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+                turetta.setPower(input);
+            }
 
             //---
 
@@ -299,6 +388,7 @@ public class main extends LinearOpMode {
             //telemetry.addData("lra", "l: %6d r: %6d a: %6d", oParallel, oPerp, oHeading);
             //telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("loop", "%.1f ms", timer.milliseconds());
+
             telemetry.update();
             timer.reset();
         }
@@ -413,6 +503,23 @@ public class main extends LinearOpMode {
             gainControl.setGain(gain);
             sleep(20);
         }
+    }
+
+    private void turretHoming(TouchSensor toccami, DcMotor turetta) {
+        while (!toccami.isPressed()) {
+            turetta.setPower(-0.2);
+        }
+        turetta.setPower(0);
+        turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        turetta.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+
+        turetta.setPower(0.1);
+        turettaTarget = 1300;
+
+        while (turetta.getCurrentPosition() < turettaTarget) {}
+        turetta.setPower(0);
+
+        return;
     }
 
     static class ctx {
