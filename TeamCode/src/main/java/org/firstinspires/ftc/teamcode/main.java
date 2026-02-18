@@ -7,6 +7,7 @@ import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
@@ -39,6 +40,10 @@ public class main extends LinearOpMode {
     //173,5 180,5
     double SPEED = .5;
     double PaY = 1, PrX = 1, R = 2, N = 8192, KP = 2;
+    int TURRET_MAX = 2400;
+    int TURRET_MIN = -20;
+    int WRAPPING_TICKS = 2;
+    int QR_LIVE_TIME = 500;
 
     double cmTickRatio = 2 * Math.PI * R / N;
     final double[] pos = {0, 0, 0};
@@ -101,12 +106,17 @@ public class main extends LinearOpMode {
         //--- Odometry Encoders Init ---
         DcMotor odoParallel = hardwareMap.get(DcMotor.class, "lb");
         DcMotor odoPerp = hardwareMap.get(DcMotor.class, "rb");
+        DcMotor odoY = hardwareMap.get(DcMotor.class, "odo_y");
+
+        odoY.setDirection(DcMotor.Direction.REVERSE);
 
         odoParallel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         odoPerp.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        odoY.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
 
         odoParallel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         odoPerp.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        odoY.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         //---
 
         //--- DriveMotors Init ---
@@ -252,8 +262,8 @@ public class main extends LinearOpMode {
                 telemetry.addLine("No AprilTags detected");
             }
 
-            lastKnownQR[2]++;
-            if (lastKnownQR[2] > 100) lastKnownQR[0] = -999;
+            lastKnownQR[2]+=timer.milliseconds();
+            if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999;
             if (Math.abs(lastKnownQR[0]) > 10 && lastKnownQR[0]!= -999) {
                 double trackSpeed = lastKnownQR[2] < 3 ? Math.pow(lastKnownQR[0], 2)/lastKnownQR[1] * 0.01 : 0.01;
                 telemetry.addData("TEST", trackSpeed);
@@ -263,8 +273,6 @@ public class main extends LinearOpMode {
             } else {
                 input = 0;
             }
-            telemetry.addData("QRx", lastKnownQR[0]);
-            telemetry.addData("QRy", lastKnownQR[1]);
 
             if (Math.abs(rX) > 0.05 && gamepad2.triangle) {
                 input = imu.getRobotAngularVelocity(AngleUnit.RADIANS).zRotationRate * -0.19285;
@@ -323,9 +331,6 @@ public class main extends LinearOpMode {
             outL.setPosition(hoodPos);
             outR.setPosition(1-hoodPos);
 
-            int TURRET_MAX = 2400;
-            int TURRET_MIN = -20;
-
             if (!gamepad2.triangle) {
                 if (gamepad2.left_bumper) input = 0.2;
                 else if (gamepad2.right_bumper) input = -0.2;
@@ -339,21 +344,24 @@ public class main extends LinearOpMode {
                 isWrapping = -1;
                 wrapTarget = TURRET_MIN;
                 turetta.setTargetPosition(wrapTarget);
-                turetta.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+                turetta.setPower(0);
             }
 
             else if (isWrapping == 0 && pos <= TURRET_MIN && input < 0) {
                 isWrapping = 1;
                 wrapTarget = TURRET_MAX;
-                turetta.setTargetPosition(wrapTarget);
-                turetta.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+                turetta.setPower(0);
             }
 
             if (isWrapping != 0) {
-                if (Math.abs(rX) > 0.05 && gamepad2.triangle) {input = Math.pow(input, 2) * Math.signum(input) * 20;}
-                if (isWrapping == -1 && input > 0) wrapTarget+= (int) (input*20);
-                if (isWrapping == 1 && input < 0) wrapTarget+= (int) (input*20);
+
+                //if (Math.abs(rX) > 0.05 && gamepad2.triangle) {input = Math.pow(input, 2) * Math.signum(input) * 20;}
+                if ((isWrapping == -1 && input > 0) || (isWrapping == 1 && input < 0)) {
+                    wrapTarget+= (int) (input*WRAPPING_TICKS*timer.milliseconds());
+                    turetta.setTargetPosition(wrapTarget);
+                }
                 turetta.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+
                 int d = Math.min(Math.abs(wrapTarget - pos), Math.abs(isWrapping == 1 ? pos : TURRET_MAX-pos));
 
                 telemetry.addData("d", wrapTarget);
@@ -361,6 +369,7 @@ public class main extends LinearOpMode {
                 double wrapPower = d * 0.003;
                 wrapPower = Math.max(0.2, wrapPower);
                 wrapPower = Math.min(1, wrapPower);
+                wrapPower *= isWrapping == 1 ? 1 : -1;
 
                 if ((isWrapping == 1 && pos > wrapTarget) || (isWrapping == -1 && pos < wrapTarget)) {
                     isWrapping = 0;
@@ -467,7 +476,7 @@ public class main extends LinearOpMode {
 
     private double angleWrap(double angle) {
         while (angle > Math.PI) angle -= 2*Math.PI;
-        while (angle < Math.PI) angle += 2*Math.PI;
+        while (angle < -Math.PI) angle += 2*Math.PI;
         return angle;
     }
 
