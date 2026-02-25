@@ -36,7 +36,7 @@ public class main extends LinearOpMode {
 
     //MAIN GLOBAL CONSTANTS
     double SPEED = .5; //Robot Speed
-    double PaY = 1, PrX = 1, R = 2, N = 8192, KP = 2; //Odometry Constants
+    double PaY = 6.8, PrX = 15.4, R = 2, N = 8192, KP = 2; //Odometry Constants
     int TURRET_OFFSET = 1320;
     int TURRET_MAX = 2400, TURRET_MIN = -20; //Turret Constraints
     double AUTOAIM_MIN_SPEED = 0.01, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
@@ -177,7 +177,7 @@ public class main extends LinearOpMode {
         double speed = SPEED; //Robot Current Speed
         long levettaTime = 0, levettaWaiter = 0; //Outtake server clock
         boolean levettaBool = false; //-
-        double input; //Turret Rotation Raw input
+        double input, output; //Turret Rotation Raw input
         double[] lastKnownQR = {-999, -999, 0}; //Last QRcode saved
 
         int isWrapping = 0;
@@ -232,7 +232,7 @@ public class main extends LinearOpMode {
             telemetry.addData("DriveMotors", "%.2f %.2f %.2f %.2f", MotArr[0], MotArr[1], MotArr[2], MotArr[3]);
 
             //QR Code Auto-Aim
-            input = 0;
+            input = 0; output = 0;
             if (!tagProcessor.getDetections().isEmpty()) {
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
@@ -255,11 +255,19 @@ public class main extends LinearOpMode {
 
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999; //Kill expired QR
 
+            if (lastKnownQR[0] != -999) {
+                if (lastKnownQR[1] > 250) {
+                    hoodPos = .62;
+                    output = 0.87;
+                }
+            }
+
             if (Math.abs(lastKnownQR[0]) > 10 && lastKnownQR[0]!= -999) {
                 double trackSpeed = lastKnownQR[2] < 100 ? Math.pow(lastKnownQR[0], 2)/lastKnownQR[1] * 0.01 : 0.01; //Get track speed with funciton V = x²/y * 0.1
 
                 if (Math.signum(lastKnownQR[0]) == 1) {input = -Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));} //Get Tracking Direction and Normalize Raw Speed
                 else {input = Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));}
+
             } else {
                 input = 0;
             }
@@ -270,8 +278,10 @@ public class main extends LinearOpMode {
             }
 
             //Main Motors Manual Handler
-            if (!gamepad2.triangle) gianluca.setPower(gamepad2.right_trigger); //Flywheel motor Manual Handler
+            if (!gamepad2.triangle) output=gamepad2.right_trigger; //Flywheel motor Manual Handler
             if (!levettaBool) in.setPower(gamepad2.left_trigger); //Intake motor Handler
+
+            gianluca.setPower(output);
 
             //Hood Position Manual Handler
             if ((gamepad2.dpad_down && hoodPos > 0.47) && !gamepad2.triangle) {
@@ -316,7 +326,6 @@ public class main extends LinearOpMode {
                     levettaBool = false;
                 }
 
-
                 if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 300) { //Intake Sync Handler
                     in.setPower(1);
                 } else {
@@ -341,7 +350,6 @@ public class main extends LinearOpMode {
                 wrapTarget = TURRET_MAX;
             }
 
-
             if (isWrapping != 0) { //Wrapping Handler
 
 
@@ -358,7 +366,6 @@ public class main extends LinearOpMode {
                 wrapPower = Math.min(1, wrapPower); //Upper Bound
                 wrapPower *= isWrapping == 1 ? 1 : -1; //Direction
 
-
                 if ((isWrapping == 1 && pos > wrapTarget) || (isWrapping == -1 && pos < wrapTarget)) { //End sequence Observer
                     isWrapping = 0;
 
@@ -373,8 +380,8 @@ public class main extends LinearOpMode {
                 turetta.setPower(input);
             }
 
-            /*telemetry.addData("lra", "l: %6d r: %6d a: %6d", oParallel, oPerp, oHeading);
-            telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));*/
+            //telemetry.addData("lra", "l: %.2f r: %.2f a: %.2f", oParallel, oPerp, oHeading);
+            telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("loop", "%.1f ms", timer.milliseconds());
 
             telemetry.update();
