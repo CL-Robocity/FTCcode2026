@@ -35,23 +35,28 @@ public class main extends LinearOpMode {
     ElapsedTime timer = new ElapsedTime();
 
     //MAIN GLOBAL CONSTANTS
+    boolean DEBUGGING = false;
     double SPEED = .5; //Robot Speed
-    double PaY = 6.8, PrX = 15.4, R = 2, N = 8192, KP = 2; //Odometry Constants
+    double PaY = -4.99, PrX = 9.73, R = 2, N = 8192, KP = 2; //Odometry Constants
     int TURRET_OFFSET = 1320;
-    int TURRET_MAX = 2400, TURRET_MIN = -20; //Turret Constraints
-    double AUTOAIM_MIN_SPEED = 0.01, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
-    double ANGULAR_TO_RAW = 0.19285;
-    int WRAPPING_TICKS = 2; //Turret Wrapping Ticks
+    int TURRET_MAX = 2600, TURRET_MIN = -70; //Turret Constraints
+    double AUTOAIM_MIN_SPEED = 0.05, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
     int QR_LIVE_TIME = 500; //QR Code Expire time
+    double CAMERA_OFFSET = 13;
+    double RAD_TO_TICKS = 1325/Math.PI;
+    double POWER_TO_TICKS = 3.5;
+    double TURRET_ACCEL = 0.001;
     double cmTickRatio = 2 * Math.PI * R / N;
 
     //MAIN GLOBAL VARIABLES
-    final double[] pos = {0, 0, 0}; //Global Robot x, y, h
+    final double[] pos = {0, 0, 0, 0}; //Global Robot x, y, h, Δh
     int turettaTarget = 90; //Homing temp var
     boolean hLock = false;
     double targetH = 0; //Target Heading
     double hoodPos = .5; //Hood Position
-    double oParallel = 0, oPerp = 0, oHeading = 0; //Old Odometry values vars
+    double tRawPos = TURRET_OFFSET;
+    double oParallel = 0, oPerp = 0, oHeading = 0, oTurret = TURRET_OFFSET; //Old Odometry values vars
+    double[] turretLock = {-999, 0};
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -61,19 +66,38 @@ public class main extends LinearOpMode {
         telemetry.update();
         //---
 
+        //IMU Init
+        IMU imu = hardwareMap.get(IMU.class, "imu");
+
+        IMU.Parameters parameters = new IMU.Parameters(
+                new RevHubOrientationOnRobot(
+                        RevHubOrientationOnRobot.LogoFacingDirection.LEFT,
+                        RevHubOrientationOnRobot.UsbFacingDirection.DOWN
+                )
+        );
+
+        imu.initialize(parameters);
+
+        telemetry.addData("Status", "Calibrating IMU");
+        sleep(1000);
+        idle();
+
+        imu.resetYaw();
+
         //Camera Init
         AprilTagLibrary tagLibrary = new AprilTagLibrary.Builder()
                 .addTag(20, "Blu", 41, DistanceUnit.CM)
                 .addTag(24, "Red", 41, DistanceUnit.CM)
+                .addTag(23, "Giacomo", 41, DistanceUnit.CM)
                 .addTag(21, "jesus", 41, DistanceUnit.CM)
                 .build();
 
         AprilTagProcessor tagProcessor = new AprilTagProcessor.Builder()
                 .setTagLibrary(tagLibrary)
-                .setDrawAxes(true)
-                .setDrawTagOutline(true)
-                .setDrawTagID(true)
-                .setDrawCubeProjection(true)
+                .setDrawAxes(DEBUGGING)
+                .setDrawTagOutline(DEBUGGING)
+                .setDrawTagID(DEBUGGING)
+                .setDrawCubeProjection(DEBUGGING)
                 .setLensIntrinsics(629.694, 629.694, 358.384, 256.314)
                 .setTagFamily(AprilTagProcessor.TagFamily.TAG_36h11)
                 .build();
@@ -82,24 +106,11 @@ public class main extends LinearOpMode {
                 .addProcessor(tagProcessor)
                 .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
                 .setCameraResolution(new Size(640, 480))
-                .enableLiveView(true)
+                .enableLiveView(DEBUGGING)
                 .build();
 
         setManualExposure(visionPortal, 1, 200);
-        FtcDashboard.getInstance().startCameraStream(visionPortal, 24);
-
-        //IMU Init
-        IMU imu = hardwareMap.get(IMU.class, "imu");
-
-        IMU.Parameters parameters = new IMU.Parameters(
-                new com.qualcomm.hardware.rev.RevHubOrientationOnRobot(
-                        RevHubOrientationOnRobot.LogoFacingDirection.LEFT,
-                        RevHubOrientationOnRobot.UsbFacingDirection.DOWN
-                )
-        );
-
-        imu.initialize(parameters);
-        imu.resetYaw();
+        if (DEBUGGING) FtcDashboard.getInstance().startCameraStream(visionPortal, 24);
 
         //Odometry Encoders Init
         DcMotor odoParallel = hardwareMap.get(DcMotor.class, "in"); //Parallel Encoder
@@ -150,34 +161,10 @@ public class main extends LinearOpMode {
         //Robot Context Init
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
 
-        //Odo Thread Init
-        Thread odometryThread = new Thread(() -> {
-            final long periodNs = 5_000_000; // ⁓200 Hz
-            Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
-            long nextTime = System.nanoTime() + periodNs;
-
-            while (!isStopRequested()) {
-                odometry(ctx);
-
-                long sleepTime = nextTime - System.nanoTime();
-
-                if (sleepTime > 0) {
-                    try {
-                    TimeUnit.NANOSECONDS.sleep(sleepTime);
-                    } catch (InterruptedException e) {
-                        break;
-                    }
-                } else {
-                    nextTime = System.nanoTime();
-                }
-            }
-        });
-
         //TeleOp Variable Init
         double speed = SPEED; //Robot Current Speed
         long levettaTime = 0, levettaWaiter = 0; //Outtake server clock
-        boolean levettaBool = false; //-
-        double input, output; //Turret Rotation Raw input
+        int levettaBool = 0;
         double[] lastKnownQR = {-999, -999, 0}; //Last QRcode saved
 
         int isWrapping = 0;
@@ -193,17 +180,11 @@ public class main extends LinearOpMode {
 
         waitForStart();
 
-        //Odo Thread Start
-        odometryThread.start();
         timer.reset();
 
         while (opModeIsActive()) {
-            double x, y, h;
-            synchronized(pos) {
-                x = pos[0];
-                y = pos[1];
-                h = pos[2];
-            }
+            odometry(ctx);
+            double x = pos[0], y = pos[1], h = pos[2];
 
             //Robot Accelerator or Decelerator
             if (gamepad1.left_bumper) {
@@ -222,8 +203,10 @@ public class main extends LinearOpMode {
             rX = Math.abs(rX) < .2 ? 0 : rX; //Right Stick X
             rY = Math.abs(rY) < .2 ? 0 : rY; //Right Stick Y
 
+            if (Math.abs(lX) > 0.05 || Math.abs(lY) > 0.05) {TURRET_ACCEL = 0.003;}
+
             //Mecanum Wheels Drive
-            double[] MotArr = MotorOut(lX, lY, rX, rY);
+            double[] MotArr = MotorOut(lX, lY, rX, rY, h);
             ctx.lFd.setPower(MotArr[0] * speed);
             ctx.lBd.setPower(MotArr[1] * speed);
             ctx.rFd.setPower(MotArr[2] * speed);
@@ -232,7 +215,7 @@ public class main extends LinearOpMode {
             telemetry.addData("DriveMotors", "%.2f %.2f %.2f %.2f", MotArr[0], MotArr[1], MotArr[2], MotArr[3]);
 
             //QR Code Auto-Aim
-            input = 0; output = 0;
+            double input = 0; double output = 0, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
             if (!tagProcessor.getDetections().isEmpty()) {
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
@@ -262,41 +245,49 @@ public class main extends LinearOpMode {
                 }
             }
 
-            if (Math.abs(lastKnownQR[0]) > 10 && lastKnownQR[0]!= -999) {
-                double trackSpeed = lastKnownQR[2] < 100 ? Math.pow(lastKnownQR[0], 2)/lastKnownQR[1] * 0.01 : 0.01; //Get track speed with funciton V = x²/y * 0.1
+            if (gamepad2.square) {
+                output = 0.6;
+                hoodPos = .65;
+            }
 
-                if (Math.signum(lastKnownQR[0]) == 1) {input = -Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));} //Get Tracking Direction and Normalize Raw Speed
+            double qrOffset = lastKnownQR[0] + CAMERA_OFFSET;
+            if (Math.abs(qrOffset) > 10 && lastKnownQR[0]!= -999) {
+                double trackSpeed = lastKnownQR[2] < 100 ? Math.pow(qrOffset, 2)/lastKnownQR[1] * 0.01 : 0.01; //Get track speed with funciton V = x²/y * 0.1
+
+                if (Math.signum(qrOffset) == 1) {input = -Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));} //Get Tracking Direction and Normalize Raw Speed
                 else {input = Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));}
 
+                minTurretSpeed = AUTOAIM_MIN_SPEED;
             } else {
                 input = 0;
             }
 
-            //Compensate Robot Angular Velocity if AutoAiming while rotating
-            if (Math.abs(rX) > 0.05 && gamepad2.triangle) {
-                input = imu.getRobotAngularVelocity(AngleUnit.RADIANS).zRotationRate * ANGULAR_TO_RAW * -1;
+            if (gamepad2.triangle && Math.abs(rX) > 0.05) {
+                TURRET_ACCEL = 0.005;
+            } else {
+                TURRET_ACCEL = 0.001;
             }
 
             //Main Motors Manual Handler
-            if (!gamepad2.triangle) output=gamepad2.right_trigger; //Flywheel motor Manual Handler
-            if (!levettaBool) in.setPower(gamepad2.left_trigger); //Intake motor Handler
+            if (!gamepad2.triangle && !gamepad2.square) output=gamepad2.right_trigger; //Flywheel motor Manual Handler
+            if (levettaBool == 0) in.setPower(gamepad2.left_trigger); //Intake motor Handler
 
             gianluca.setPower(output);
 
             //Hood Position Manual Handler
-            if ((gamepad2.dpad_down && hoodPos > 0.47) && !gamepad2.triangle) {
-                hoodPos-=0.01; //Lower
+            if ((gamepad2.dpad_down && hoodPos > 0.47) && (!gamepad2.triangle && !gamepad2.square)) {
+                hoodPos-=0.002*timer.milliseconds(); //Lower
             }
-            if ((gamepad2.dpad_up && hoodPos < 0.8) && !gamepad2.triangle) {
-                hoodPos+=0.01; //Raise
+            if ((gamepad2.dpad_up && hoodPos < 0.8) && (!gamepad2.triangle && !gamepad2.square)) {
+                hoodPos+=0.002*timer.milliseconds(); //Raise
             }
             outL.setPosition(hoodPos); //left
             outR.setPosition(1-hoodPos); //right
 
             //Turret Manual Handler
             if (!gamepad2.triangle) {
-                if (gamepad2.left_bumper) input = 0.2;
-                else if (gamepad2.right_bumper) input = -0.2;
+                if (gamepad2.left_bumper) {input = 0.2; minTurretSpeed = 0.2;}
+                else if (gamepad2.right_bumper) {input = -0.2; minTurretSpeed = 0.2;}
             }
 
             //Outtake Server Clock Handler
@@ -304,29 +295,38 @@ public class main extends LinearOpMode {
                 levettaWaiter = System.currentTimeMillis();
             }
 
-
-            if (gamepad2.cross && !levettaBool) { //Clock Init
+            if (gamepad2.cross && levettaBool == 0) { //Clock Init
                 in.setPower(1);
                 levettaTime = System.currentTimeMillis();
-                levettaBool = true;
+                levettaBool = 1;
             }
 
+            NormalizedRGBA rgb = colore.getNormalizedColors();
 
-            if (levettaBool) { //Stages Cycle handler
+            telemetry.addData("b", rgb.blue);
+
+            if (levettaBool > 0) { //Stages Cycle handler
                 in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
                 long dt = System.currentTimeMillis() - levettaTime;
-                NormalizedRGBA rgb = colore.getNormalizedColors();
+                //NormalizedRGBA rgb = colore.getNormalizedColors();
 
                 if (dt < 300) {
-                    if (rgb.blue > 0.001) {levetta.setPosition(.75);} //Activate only if a ball is detected
+                    if (rgb.blue > 0.005) { //Activate only if a ball is detected
+                        levetta.setPosition(.65);
+                        levettaBool = 2;
+                    } else if (rgb.blue > 0.001) {
+                        levetta.setPosition(.5);
+                        dt=800;
+                    }
+                } else if (dt < 700) {
+                    if (levettaBool == 2) levetta.setPosition(.78);
                 } else if (dt < 900) {
                     levetta.setPosition(0.43);
-                } else {
-                    levetta.setPosition(0.43);
-                    levettaBool = false;
+                } else if (dt < 2000) {
+                    levettaBool = 0;
                 }
 
-                if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 300) { //Intake Sync Handler
+                if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 700) { //Intake Sync Handler
                     in.setPower(1);
                 } else {
                     in.setPower(0);
@@ -337,61 +337,31 @@ public class main extends LinearOpMode {
                 in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
             }
 
-            //RAW -> FINAL Turret Handler
-            int pos = turetta.getCurrentPosition();
+            tRawPos += input * POWER_TO_TICKS * timer.milliseconds();
+            turretLock[1] += input * POWER_TO_TICKS * timer.milliseconds();
 
-            if (isWrapping == 0 && pos >= TURRET_MAX && input > 0) { //Upper Constraint Handler
-                isWrapping = -1;
-                wrapTarget = TURRET_MIN;
-            }
-
-            else if (isWrapping == 0 && pos <= TURRET_MIN && input < 0) { //Lower Constraint Handler
-                isWrapping = 1;
-                wrapTarget = TURRET_MAX;
-            }
-
-            if (isWrapping != 0) { //Wrapping Handler
-
-
-                if ((isWrapping == -1 && input > 0) || (isWrapping == 1 && input < 0)) { //Move Target to simulate 360° rot
-                    wrapTarget+= (int) (input*WRAPPING_TICKS*timer.milliseconds());
-                }
-                //turetta.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
-
-                int d = Math.min(Math.abs(wrapTarget - pos), Math.abs(isWrapping == 1 ? pos : TURRET_MAX-pos)); //RAW Motor Power
-
-
-                double wrapPower = d * 0.003; //Normalized Power Calculator
-                wrapPower = Math.max(0.2, wrapPower); //Lower Bound
-                wrapPower = Math.min(1, wrapPower); //Upper Bound
-                wrapPower *= isWrapping == 1 ? 1 : -1; //Direction
-
-                if ((isWrapping == 1 && pos > wrapTarget) || (isWrapping == -1 && pos < wrapTarget)) { //End sequence Observer
-                    isWrapping = 0;
-
-                    turetta.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE); //Stop and reset motor
-                    turetta.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+            //Compensate Robot Angular Velocity if AutoAiming while rotating
+            if (gamepad2.triangle) {
+                if (turretLock[0] == -999) {
+                    turretLock[0] = h;
+                    turretLock[1] = turetta.getCurrentPosition();
                 }
 
-                turetta.setPower(wrapPower); //Feed Processed Output
-
-            } else { //Normal Conditions ( not Wrapping )
-                if (gamepad2.triangle) turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER); //Use encoder for more precision if AutoAiming
-                turetta.setPower(input);
+                tRawPos = turretLock[1] - angleWrap(h - turretLock[0])*RAD_TO_TICKS;
+            } else {
+                turretLock[0] = -999;
             }
+            turretMovement(turetta, tRawPos, minTurretSpeed);
 
             //telemetry.addData("lra", "l: %.2f r: %.2f a: %.2f", oParallel, oPerp, oHeading);
             telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("loop", "%.1f ms", timer.milliseconds());
+            telemetry.addData("Turret", turetta.getCurrentPosition());
 
             telemetry.update();
+            idle();
+            sleep(5);
             timer.reset();
-        }
-
-        //Odometry Thread killer
-        if (odometryThread.isAlive()) {
-            odometryThread.interrupt();
-            odometryThread.join();
         }
 
         //Camera Killer
@@ -399,20 +369,16 @@ public class main extends LinearOpMode {
     }
 
     //Mecanum Drive
-    private double[] MotorOut(double lX, double lY, double rX, double rY) {
-
-        double h = pos[2];
+    private double[] MotorOut(double lX, double lY, double rX, double rY, double h) {
         double rot;
         if (Math.abs(rX) < .05) {
-            //KP Gyro-corrected straight
 
             if (!hLock) {
                 targetH = h;
                 hLock = true;
             }
             double e = angleWrap(targetH - h);
-            //rot = e * KP;
-            rot = 0; //TEMP
+            rot = 0;//e * KP;
         } else {
             //Normal Rot
             hLock = false;
@@ -421,14 +387,40 @@ public class main extends LinearOpMode {
         }
 
         //Motors Raw Output
-        double lf = lY + lX + rot;
-        double lb = lY - lX + rot;
-        double rf = lY - lX - rot;
-        double rb = lY + lX - rot;
+        double y = lY/*lY*Math.cos(h)+lX*Math.sin(h)*/, x = lX/*lX*Math.cos(h)-lY*Math.sin(h)*/;
+
+        double lf = y + x + rot;
+        double lb = y - x + rot;
+        double rf = y - x - rot;
+        double rb = y + x - rot;
 
         //Normalized outputs
         double max = Math.max(1, Math.max(Math.abs(lf), Math.max(Math.abs(lb), Math.max(Math.abs(rf), Math.abs(rb)))));
         return new double[]{lf/max, lb/max, rf/max, rb/max}; //lf, lb, rf, rb
+    }
+
+    //Turret Handler
+    private void turretMovement(DcMotor turetta, double tRawPos, double minSpeed) {
+        double range = Math.abs(TURRET_MAX - TURRET_MIN);
+        double tPos = ((tRawPos + Math.abs(TURRET_MIN))%range + range) % range - Math.abs(TURRET_MIN);
+        telemetry.addData("tPos", tPos);
+        double c = turetta.getCurrentPosition();
+
+        double err = Math.abs(tPos - c);
+
+        if (err > 10) {
+            int dir = tPos > c ? 1 : -1;
+
+            double d = Math.min(err, dir == 1 ? Math.abs(c - TURRET_MIN) : Math.abs(c - TURRET_MAX));//RAW Motor Power
+
+            double p = Math.max(Math.min(d * TURRET_ACCEL, 1), minSpeed) * dir; //Normalized Power Calculator
+
+            turetta.setPower(p);
+            telemetry.addData("d", d);
+        } else {
+            turetta.setPower(0);
+            oTurret = c;
+        }
     }
 
     //Threaded Odometry function
@@ -437,7 +429,12 @@ public class main extends LinearOpMode {
         double parallel = ctx.odoParallel.getCurrentPosition() * cmTickRatio;
         double perp = ctx.odoPerp.getCurrentPosition() * cmTickRatio;
 
-        double imuHeading = getHeading(ctx);
+        double imuHeading;
+        try {
+            imuHeading = ctx.imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
+        } catch (Exception e) {
+            imuHeading = oHeading; // use last valid value
+        }
 
         //delta values
         double dParallel = parallel - oParallel;
@@ -451,22 +448,14 @@ public class main extends LinearOpMode {
         //Calculating Translate-only values
         double corrX = dParallel - dHeading * PaY;
         double corrY = dPerp + dHeading * PrX;
-        double midHeading = pos[2] + dHeading/2;
+
+        double midHeading = oHeading + dHeading/2;
 
         double cos = Math.cos(midHeading), sin = Math.sin(midHeading);
 
-        //Thread sync
-        synchronized(pos) {
-            pos[0] += corrX * cos - corrY * sin;
-            pos[1] += corrX * sin + corrY * cos;
-            pos[2] += dHeading;
-            pos[2] = angleWrap(pos[2]);
-        }
-    }
-
-    //GetHeading
-    private double getHeading(ctx ctx) {
-        return ctx.imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
+        pos[0] += corrX * cos - corrY * sin;
+        pos[1] += corrX * sin + corrY * cos;
+        pos[2] = angleWrap(imuHeading);
     }
 
     //Angle Wrapper from -2π to 2π
@@ -478,20 +467,23 @@ public class main extends LinearOpMode {
 
     //Turret Starting Alignment ( homing )
     private void turretHoming(TouchSensor toccami, DcMotor turetta) {
-        while (!toccami.isPressed()) { //Wait till known position
+
+        while (!isStopRequested() && !toccami.isPressed()) {
             turetta.setPower(-0.2);
+            idle();
         }
 
-        //Motor Reset and Init
         turetta.setPower(0);
+
         turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turetta.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
-        //Align to Correct Offset
         turetta.setPower(0.1);
-        turettaTarget = TURRET_OFFSET;
 
-        while (turetta.getCurrentPosition() < turettaTarget) {} //Wait till alignment
+        while (!isStopRequested() && turetta.getCurrentPosition() < TURRET_OFFSET) {
+            idle();
+        }
+
         turetta.setPower(0);
     }
 

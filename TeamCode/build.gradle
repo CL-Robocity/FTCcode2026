@@ -25,5 +25,4 @@ android {
 
 dependencies {
     implementation project(':FtcRobotController')
-    implementation 'org.openftc:apriltag:2.1.0'
 }
