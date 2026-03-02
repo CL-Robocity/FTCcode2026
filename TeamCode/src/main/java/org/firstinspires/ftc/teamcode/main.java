@@ -202,8 +202,6 @@ public class main extends LinearOpMode {
             rX = Math.abs(rX) < .2 ? 0 : rX; //Right Stick X
             rY = Math.abs(rY) < .2 ? 0 : rY; //Right Stick Y
 
-            if (Math.abs(lX) > 0.05 || Math.abs(lY) > 0.05) {TURRET_ACCEL = 0.003;}
-
             //Mecanum Wheels Drive
             double[] MotArr = MotorOut(lX, lY, rX, rY, h);
             ctx.lFd.setPower(MotArr[0] * speed);
@@ -242,11 +240,10 @@ public class main extends LinearOpMode {
                     hoodPos = .62;
                     output = 0.87;
                 }
-            }
 
-            if (gamepad2.square) { //test Autopower
-                output = 0.6;
-                hoodPos = .65;
+                if (gamepad2.square) {
+                    output = (lastKnownQR[1]/100 - 3.8)/6 + 1.1;
+                }
             }
 
             //Autoaim at QR code
