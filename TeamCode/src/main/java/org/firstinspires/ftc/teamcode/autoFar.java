@@ -5,9 +5,7 @@ import android.util.Size;
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.hardware.TouchSensor;
@@ -30,9 +28,8 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-@Disabled
-@Autonomous(name="AutoFrameWork", group="Main")
-public class auto extends LinearOpMode {
+@Autonomous(name="AutoNear", group="Main")
+public class autoFar extends LinearOpMode {
 
     //timer obj
     ElapsedTime timer = new ElapsedTime();
@@ -63,7 +60,6 @@ public class auto extends LinearOpMode {
     long levettaTime = 0, levettaWaiter = 0; //Outtake server clock
     int levettaBool = 0;
     double[] lastKnownQR = {-999, -999, 0, 0}; //Last QRcode saved
-
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -177,7 +173,7 @@ public class auto extends LinearOpMode {
 
         waitForStart();
 
-        timer.reset();
+        shoot(ctx, 5000);
 
         while(turretMovement(turetta, TURRET_OFFSET, 0.1)) {idle();};
         //Camera Killer

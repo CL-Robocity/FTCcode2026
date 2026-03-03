@@ -35,7 +35,7 @@ public class main extends LinearOpMode {
     ElapsedTime timer = new ElapsedTime();
 
     //MAIN GLOBAL CONSTANTS
-    boolean DEBUGGING = true; //Debugging Const
+    boolean DEBUGGING = false; //Debugging Const
     double SPEED = .5; //Robot Speed
     double PaY = -4.99, PrX = 9.73, R = 2, N = 8192, KP = 2; //Odometry Constants
     int TURRET_OFFSET = 1320; //Turret Starting Position
@@ -51,13 +51,14 @@ public class main extends LinearOpMode {
 
     //MAIN GLOBAL VARIABLES
     final double[] pos = {0, 0, 0, 0}; //Global Robot x, y, h, Δh
-    int turettaTarget = 90; //Homing temp var
-    boolean hLock = false;
-    double targetH = 0; //Target Heading
     double hoodPos = .5; //Hood Position
     double tRawPos = TURRET_OFFSET;
     double oParallel = 0, oPerp = 0, oHeading = 0, oTurret = TURRET_OFFSET; //Old Odometry values vars, Old Turret Pos
     double[] turretLock = {-999, 0}; //Turret Lock Position
+    double speed = SPEED; //Robot Current Speed
+    long levettaTime = 0, levettaWaiter = 0; //Outtake server clock
+    int levettaBool = 0; //Levetta cycle activator
+    double[] lastKnownQR = {-999, -999, 0, 0}; //Last QRcode saved
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -161,15 +162,6 @@ public class main extends LinearOpMode {
         //Robot Context Init
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
 
-        //TeleOp Variable Init
-        double speed = SPEED; //Robot Current Speed
-        long levettaTime = 0, levettaWaiter = 0; //Outtake server clock
-        int levettaBool = 0;
-        double[] lastKnownQR = {-999, -999, 0, 0}; //Last QRcode saved
-
-        int isWrapping = 0;
-        int wrapTarget = 0;
-
         //Turret Homing Process
         telemetry.addData("Status", "Homing Turret");
         telemetry.update();
@@ -204,7 +196,7 @@ public class main extends LinearOpMode {
             rY = Math.abs(rY) < .2 ? 0 : rY; //Right Stick Y
 
             //Mecanum Wheels Drive
-            double[] MotArr = MotorOut(lX, lY, rX, rY, h);
+            double[] MotArr = MotorOut(lX, lY, rX, rY);
             ctx.lFd.setPower(MotArr[0] * speed);
             ctx.lBd.setPower(MotArr[1] * speed);
             ctx.rFd.setPower(MotArr[2] * speed);
@@ -371,22 +363,8 @@ public class main extends LinearOpMode {
     }
 
     //Mecanum Drive
-    private double[] MotorOut(double lX, double lY, double rX, double rY, double h) {
-        double rot;
-        if (Math.abs(rX) < .05) {
-
-            if (!hLock) {
-                targetH = h;
-                hLock = true;
-            }
-            double e = angleWrap(targetH - h);
-            rot = 0;//e * KP;
-        } else {
-            //Normal Rot
-            hLock = false;
-            rot = rX;
-            targetH = h;
-        }
+    private double[] MotorOut(double lX, double lY, double rX, double rY) {
+        double rot = rX;
 
         //Motors Raw Output
         double y = lY/*lY*Math.cos(h)+lX*Math.sin(h)*/, x = lX/*lX*Math.cos(h)-lY*Math.sin(h)*/;
