@@ -35,17 +35,18 @@ public class main extends LinearOpMode {
     ElapsedTime timer = new ElapsedTime();
 
     //MAIN GLOBAL CONSTANTS
-    boolean DEBUGGING = false; //Debugging Const
+    boolean DEBUGGING = true; //Debugging Const
     double SPEED = .5; //Robot Speed
     double PaY = -4.99, PrX = 9.73, R = 2, N = 8192, KP = 2; //Odometry Constants
     int TURRET_OFFSET = 1320; //Turret Starting Position
     int TURRET_MAX = 2600, TURRET_MIN = -70; //Turret Constraints
-    double AUTOAIM_MIN_SPEED = 0.05, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
-    int QR_LIVE_TIME = 500; //QR Code Expire time
-    double CAMERA_OFFSET = 13; //Camera Offset
+    double AUTOAIM_MIN_SPEED = 0.01, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
+    int QR_LIVE_TIME = 1000; //QR Code Expire time
+    double CAMERA_OFFSET = 5; //Camera Offset
     double RAD_TO_TICKS = 1325/Math.PI; //Turret Angle to Motor Ticks
     double POWER_TO_TICKS = 3.5; //Motor Power to Turret Ticks
     double TURRET_ACCEL = 0.001; //Turret Acceleration
+    double ERR = 10;
     double cmTickRatio = 2 * Math.PI * R / N;
 
     //MAIN GLOBAL VARIABLES
@@ -164,7 +165,7 @@ public class main extends LinearOpMode {
         double speed = SPEED; //Robot Current Speed
         long levettaTime = 0, levettaWaiter = 0; //Outtake server clock
         int levettaBool = 0;
-        double[] lastKnownQR = {-999, -999, 0}; //Last QRcode saved
+        double[] lastKnownQR = {-999, -999, 0, 0}; //Last QRcode saved
 
         int isWrapping = 0;
         int wrapTarget = 0;
@@ -213,21 +214,23 @@ public class main extends LinearOpMode {
 
             //QR Code Auto-Aim
             double input = 0; double output = 0, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
-            if (!tagProcessor.getDetections().isEmpty()) {
+            if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) {
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
                     if (tag.metadata != null) { //QR code detected :)
-                        double tx = tag.ftcPose.x, ty = tag.ftcPose.y; //Horizontal Distance, Forward Distance
+                        double tx = tag.ftcPose.x, ty = tag.ftcPose.y, r=tag.ftcPose.yaw;//Horizontal Distance, Forward Distance
+                        //Store QR
+                        lastKnownQR[0] = tx;
+                        lastKnownQR[1] = ty;
+                        lastKnownQR[2] = 0;
+                        lastKnownQR[3] = r;
 
-                        if (gamepad2.triangle) { //if Auto-Aiming -> Store it
-                            lastKnownQR[0] = tx;
-                            lastKnownQR[1] = ty;
-                            lastKnownQR[2] = 0;
-                        }
+                        ERR = 5;
                     }
                 }
             } else {
                 telemetry.addLine("No AprilTags detected");
+                ERR = 10;
             }
 
             //QR code storing system
@@ -235,21 +238,25 @@ public class main extends LinearOpMode {
 
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999; //Kill expired QR
 
-            if (lastKnownQR[0] != -999) {
-                if (lastKnownQR[1] > 250) { //Far AutoPower
-                    hoodPos = .62;
-                    output = 0.87;
-                }
+            if (lastKnownQR[0] != -999 && gamepad2.dpad_left) {
+                output = (lastKnownQR[1]/100)/7 + 0.32;
 
-                if (gamepad2.square) {
-                    output = (lastKnownQR[1]/100 - 3.8)/6 + 1.1;
+                if (lastKnownQR[1] < 200) {
+                    hoodPos = .53;
+                    output+= 0.1;
+                } else {
+                    hoodPos = .6;
                 }
             }
+            telemetry.addData("out", output);
+            telemetry.addData("dist", lastKnownQR[1]);
 
             //Autoaim at QR code
-            double qrOffset = lastKnownQR[0] + CAMERA_OFFSET;
-            if (Math.abs(qrOffset) > 10 && lastKnownQR[0]!= -999) {
-                double trackSpeed = lastKnownQR[2] < 100 ? Math.pow(qrOffset, 2)/lastKnownQR[1] * 0.01 : 0.01; //Get track speed with funciton V = x²/y * 0.1
+            double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
+            telemetry.addData("r", lastKnownQR[3]);
+            telemetry.addData("dist", qrOffset);
+            if (Math.abs(qrOffset) > 10 && lastKnownQR[0] != -999) {
+                double trackSpeed = !gamepad2.dpad_left ? Math.pow(qrOffset, 2)/(2*lastKnownQR[1]) * 0.01 : 0; //Get track speed with funciton V = x²/y * 0.1
 
                 if (Math.signum(qrOffset) == 1) {input = -Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));} //Get Tracking Direction and Normalize Raw Speed
                 else {input = Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));}
@@ -273,10 +280,10 @@ public class main extends LinearOpMode {
             gianluca.setPower(output);
 
             //Hood Position Manual Handler
-            if ((gamepad2.dpad_down && hoodPos > 0.47) && (!gamepad2.triangle && !gamepad2.square)) {
+            if ((gamepad2.dpad_down && hoodPos > 0.47) && !gamepad2.triangle) {
                 hoodPos-=0.002*timer.milliseconds(); //Lower
             }
-            if ((gamepad2.dpad_up && hoodPos < 0.8) && (!gamepad2.triangle && !gamepad2.square)) {
+            if ((gamepad2.dpad_up && hoodPos < 0.8) && !gamepad2.triangle) {
                 hoodPos+=0.002*timer.milliseconds(); //Raise
             }
             outL.setPosition(hoodPos); //left
@@ -304,16 +311,16 @@ public class main extends LinearOpMode {
                 long dt = System.currentTimeMillis() - levettaTime;
                 NormalizedRGBA rgb = colore.getNormalizedColors();
 
-                if (dt < 300) { //Stage1: Push up to "ready" postition
-                    if (rgb.blue > 0.005) { //Activate only if a ball is detected
-                        levetta.setPosition(.65);
+                telemetry.addData("rgb", rgb.blue);
+                telemetry.addData("dt", dt);
+
+                if (dt < 500) { //Stage1: Push up to "ready" postition
+                    if (rgb.blue > 0.001) { //Activate only if a ball is detected
+                        levetta.setPosition(.61);
                         levettaBool = 2;
-                    } else if (rgb.blue > 0.001) { //Little movement to move the ball
-                        levetta.setPosition(.5);
-                        dt=800;
                     }
                 } else if (dt < 700) { //Stage2: SHOOT
-                    if (levettaBool == 2) levetta.setPosition(.78);
+                    if (levettaBool == 2) levetta.setPosition(.75);
                 } else if (dt < 900) { //Stage3: Retreat
                     levetta.setPosition(0.43);
                 } else if (dt < 2000) { //Stage4: Wait
@@ -403,7 +410,9 @@ public class main extends LinearOpMode {
 
         double err = Math.abs(tPos - c); //Error
 
-        if (err > 10) { //Move turret
+        telemetry.addData("err", err);
+
+        if (err > ERR) { //Move turret
             int dir = tPos > c ? 1 : -1; //Get direction
 
             double d = Math.min(err, dir == 1 ? Math.abs(c - TURRET_MIN) : Math.abs(c - TURRET_MAX));//RAW Motor Power
@@ -475,7 +484,7 @@ public class main extends LinearOpMode {
 
         //Reset encoder
         turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        turetta.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
         //Move to offset position
         turetta.setPower(0.1);
