@@ -30,13 +30,13 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-@Disabled
 @Autonomous(name="AutoFrameWork", group="Main")
 public class auto extends LinearOpMode {
 
     //timer obj
     ElapsedTime timer = new ElapsedTime();
     ElapsedTime timer2 = new ElapsedTime();
+    ElapsedTime timer3 = new ElapsedTime();
 
     //MAIN GLOBAL CONSTANTS
     boolean DEBUGGING = false; //Debugging Const
@@ -177,6 +177,14 @@ public class auto extends LinearOpMode {
 
         waitForStart();
 
+        while(turretMovement(turetta, TURRET_OFFSET-200, 0.1)) {idle();};
+
+        //shoot(ctx, 10000);
+        align(ctx, 15, 0.2);
+        straight(ctx, 40, 0.3, false);
+        align(ctx, -90, 0.2);
+        straight(ctx, 60, 0.3, true);
+
         timer.reset();
 
         while(turretMovement(turetta, TURRET_OFFSET, 0.1)) {idle();};
@@ -184,7 +192,7 @@ public class auto extends LinearOpMode {
         visionPortal.close();
     }
 
-    private void straight(ctx ctx, double cm, double speed) {
+    private void straight(ctx ctx, double cm, double speed, boolean intake) {
         double cmToTicks = 384.5;
 
         double ticks = cmToTicks * cm / (Math.PI * 10.4);
@@ -199,6 +207,12 @@ public class auto extends LinearOpMode {
         ctx.rBd.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         ctx.rFd.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
+        telemetry.addData("ciao", ctx.lFd.getCurrentPosition());
+        telemetry.addData("ticks", ticks);
+        telemetry.update();
+
+       sleep(5);
+
         while (Math.abs(ctx.lFd.getCurrentPosition()) < ticks) {
             double p = speed * Math.signum(cm);
 
@@ -206,38 +220,61 @@ public class auto extends LinearOpMode {
             ctx.lBd.setPower(p);
             ctx.rFd.setPower(p);
             ctx.rBd.setPower(p);
+
+            if (intake) ctx.in.setPower(1);
         }
+
+        ctx.lFd.setPower(0);
+        ctx.lBd.setPower(0);
+        ctx.rFd.setPower(0);
+        ctx.rBd.setPower(0);
+        ctx.in.setPower(0);
     }
 
-    private void align(ctx ctx, double dgr, double speed) {
-        double dt = angleWrap(Math.toRadians(dgr)) - angleWrap(ctx.imu.getRobotYawPitchRollAngles().getYaw());
+    private void align(ctx ctx, double targetDeg, double maxPower) {
+        double tolerance = 2; // degrees
+        double currentDeg = Math.toDegrees(-ctx.imu.getRobotYawPitchRollAngles().getYaw());
 
-        if (dt > 0) {
-            while (angleWrap(ctx.imu.getRobotYawPitchRollAngles().getYaw()) < angleWrap(dgr)) {
-                ctx.lFd.setPower(-.2);
-                ctx.lBd.setPower(-.2);
-                ctx.rFd.setPower(.2);
-                ctx.rBd.setPower(.2);
+        while (opModeIsActive() && Math.abs(angleDiff(targetDeg, currentDeg)) > tolerance) {
+            double error = angleDiff(targetDeg, currentDeg);
 
-                sleep(5);
-            }
-        } else {
-            while (angleWrap(ctx.imu.getRobotYawPitchRollAngles().getYaw()) > angleWrap(dgr)) {
-                ctx.lFd.setPower(.2);
-                ctx.lBd.setPower(.2);
-                ctx.rFd.setPower(-.2);
-                ctx.rBd.setPower(-.2);
+            // Proportional control: smaller error => smaller power
+            double p = Math.signum(error) * Math.min(maxPower, Math.max(0.05, Math.abs(error) / 30 * maxPower));
 
-                sleep(5);
-            }
+            // Apply mecanum rotation powers
+            ctx.lFd.setPower(-p);
+            ctx.lBd.setPower(-p);
+            ctx.rFd.setPower(p);
+            ctx.rBd.setPower(p);
+
+            sleep(10); // Small delay for loop stability
+            currentDeg = Math.toDegrees(-ctx.imu.getRobotYawPitchRollAngles().getYaw());
         }
+
+        // Stop motors
+        ctx.lFd.setPower(0);
+        ctx.lBd.setPower(0);
+        ctx.rFd.setPower(0);
+        ctx.rBd.setPower(0);
+    }
+
+    // Returns the smallest difference between two angles (-180 to +180)
+    private double angleDiff(double target, double current) {
+        double diff = target - current;
+        while (diff > 180) diff -= 360;
+        while (diff < -180) diff += 360;
+        return diff;
     }
 
     private void shoot(ctx ctx, double ms) {
-        boolean triangle = true, dpad_left = true, cross = ms > 4000;
+        boolean triangle = true, dpad_left = true;
         timer2.reset();
+        timer3.reset();
+        double hoodError = 0, outputError = 1;
         while (opModeIsActive() && timer2.milliseconds() < ms) {
-            double input; double output = 0, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
+            boolean cross = timer2.milliseconds() > 5000;
+            double input = 0; double output = 0, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
+
             if (!ctx.tagProcessor.getDetections().isEmpty() && triangle) {
                 List<AprilTagDetection> tags = ctx.tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
@@ -253,29 +290,34 @@ public class auto extends LinearOpMode {
                     }
                 }
             } else {
+                telemetry.addLine("No AprilTags detected");
                 ERR = 10;
             }
 
             //QR code storing system
-            lastKnownQR[2]+=timer.milliseconds(); //Make time pass
+            lastKnownQR[2]+=timer3.milliseconds(); //Make time pass
 
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999; //Kill expired QR
 
             if (lastKnownQR[0] != -999 && dpad_left) {
                 output = (lastKnownQR[1]/100)/7 + 0.32;
 
-                if (lastKnownQR[1] < 200) {
+                if (lastKnownQR[1] < 250) {
                     hoodPos = .53;
-                    output+= 0.1;
+                    output+= 0.12;
                 } else {
                     hoodPos = .6;
                 }
             }
+            telemetry.addData("timer", timer.milliseconds());
+            telemetry.addData("timer2", timer2.milliseconds());
+            telemetry.addData("timer3", timer3.milliseconds());
 
             //Autoaim at QR code
-            double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])));
+            double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
+
             if (Math.abs(qrOffset) > 10 && lastKnownQR[0] != -999) {
-                double trackSpeed = !dpad_left ? Math.pow(qrOffset, 2)/(2*lastKnownQR[1]) * 0.01 : 0; //Get track speed with funciton V = x²/y * 0.1
+                double trackSpeed = dpad_left ? Math.pow(qrOffset, 2)/(2*lastKnownQR[1]) * 0.01 : 0; //Get track speed with funciton V = x²/y * 0.1
 
                 if (Math.signum(qrOffset) == 1) {input = -Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));} //Get Tracking Direction and Normalize Raw Speed
                 else {input = Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));}
@@ -285,15 +327,9 @@ public class auto extends LinearOpMode {
                 input = 0;
             }
 
-            ctx.gianluca.setPower(output);
-            ctx.outL.setPosition(hoodPos); //left
-            ctx.outR.setPosition(1-hoodPos); //right
-
-            //Turret Manual Handler
-            if (!triangle) {
-                if (gamepad2.left_bumper) {input = 0.2; minTurretSpeed = 0.2;}
-                else if (gamepad2.right_bumper) {input = -0.2; minTurretSpeed = 0.2;}
-            }
+            ctx.gianluca.setPower(output * outputError);
+            ctx.outL.setPosition(hoodPos - hoodError); //left
+            ctx.outR.setPosition(1-(hoodPos - hoodError)); //right
 
             //Outtake Server Clock Handler
             if (!cross) { //Reset
@@ -311,6 +347,9 @@ public class auto extends LinearOpMode {
                 long dt = System.currentTimeMillis() - levettaTime;
                 NormalizedRGBA rgb = ctx.colore.getNormalizedColors();
 
+                telemetry.addData("rgb", rgb.blue);
+                telemetry.addData("dt", dt);
+
                 if (dt < 500) { //Stage1: Push up to "ready" postition
                     if (rgb.blue > 0.001) { //Activate only if a ball is detected
                         ctx.levetta.setPosition(.61);
@@ -318,29 +357,37 @@ public class auto extends LinearOpMode {
                     }
                 } else if (dt < 700) { //Stage2: SHOOT
                     if (levettaBool == 2) ctx.levetta.setPosition(.75);
-                } else if (dt < 900) { //Stage3: Retreat
+                } else if (dt < 1500) { //Stage3: Retreat
                     ctx.levetta.setPosition(0.43);
-                } else if (dt < 2000) { //Stage4: Wait
+                } else { //Stage4: Wait
                     levettaBool = 0;
                 }
 
                 if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 700) { //Intake Sync Handler
                     ctx.in.setPower(1);
+                    hoodError = .05;
+                    outputError = 1.1;
                 } else {
                     ctx.in.setPower(0);
                 }
 
             } else { //Intake servo rest position
-                ctx.levetta.setPosition(0.44);
+                ctx.levetta.setPosition(0.43);
                 ctx.in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
             }
 
             //Turret Raw Position Handler
-            tRawPos += input * POWER_TO_TICKS * timer.milliseconds();
-            turretLock[1] += input * POWER_TO_TICKS * timer.milliseconds();
+            tRawPos += input * POWER_TO_TICKS * timer3.milliseconds();
+            turretLock[1] += input * POWER_TO_TICKS * timer3.milliseconds();
 
             //Turret Handler
             turretMovement(ctx.turetta, tRawPos, minTurretSpeed);
+
+            hoodError = hoodError - timer.milliseconds()/600*0.015 < 0 ? 0 : hoodError - timer.milliseconds()/600*0.015;
+            outputError = outputError - timer.milliseconds()/600*0.04 < 1 ? 1 : outputError - timer.milliseconds()/600*0.04;
+
+            telemetry.update();
+            timer3.reset();
         }
     }
 

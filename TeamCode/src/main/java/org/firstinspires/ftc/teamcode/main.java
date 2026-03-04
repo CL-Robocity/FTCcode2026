@@ -59,6 +59,7 @@ public class main extends LinearOpMode {
     long levettaTime = 0, levettaWaiter = 0; //Outtake server clock
     int levettaBool = 0; //Levetta cycle activator
     double[] lastKnownQR = {-999, -999, 0, 0}; //Last QRcode saved
+    double hoodError = 0, outputError = 1;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -233,15 +234,16 @@ public class main extends LinearOpMode {
             if (lastKnownQR[0] != -999 && gamepad2.dpad_left) {
                 output = (lastKnownQR[1]/100)/7 + 0.32;
 
-                if (lastKnownQR[1] < 200) {
+                if (lastKnownQR[1] < 250) {
                     hoodPos = .53;
-                    output+= 0.1;
+                    output+= 0.12;
                 } else {
                     hoodPos = .6;
                 }
             }
-            telemetry.addData("out", output);
+            telemetry.addData("out", output * outputError);
             telemetry.addData("dist", lastKnownQR[1]);
+            telemetry.addData("outPer", outputError);
 
             //Autoaim at QR code
             double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
@@ -269,7 +271,7 @@ public class main extends LinearOpMode {
             if (!gamepad2.triangle && !gamepad2.square) output=gamepad2.right_trigger; //Flywheel motor Manual Handler
             if (levettaBool == 0) in.setPower(gamepad2.left_trigger); //Intake motor Handler
 
-            gianluca.setPower(output);
+            gianluca.setPower(output * outputError);
 
             //Hood Position Manual Handler
             if ((gamepad2.dpad_down && hoodPos > 0.47) && !gamepad2.triangle) {
@@ -278,8 +280,8 @@ public class main extends LinearOpMode {
             if ((gamepad2.dpad_up && hoodPos < 0.8) && !gamepad2.triangle) {
                 hoodPos+=0.002*timer.milliseconds(); //Raise
             }
-            outL.setPosition(hoodPos); //left
-            outR.setPosition(1-hoodPos); //right
+            outL.setPosition(hoodPos - hoodError); //left
+            outR.setPosition(1-(hoodPos - hoodError)); //right
 
             //Turret Manual Handler
             if (!gamepad2.triangle) {
@@ -313,20 +315,22 @@ public class main extends LinearOpMode {
                     }
                 } else if (dt < 700) { //Stage2: SHOOT
                     if (levettaBool == 2) levetta.setPosition(.75);
-                } else if (dt < 900) { //Stage3: Retreat
+                } else if (dt < 1500) { //Stage3: Retreat
                     levetta.setPosition(0.43);
-                } else if (dt < 2000) { //Stage4: Wait
+                } else { //Stage4: Wait
                     levettaBool = 0;
                 }
 
                 if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 700) { //Intake Sync Handler
                     in.setPower(1);
+                    hoodError = .05;
+                    outputError = 1.1;
                 } else {
                     in.setPower(0);
                 }
 
             } else { //Intake servo rest position
-                levetta.setPosition(0.44);
+                levetta.setPosition(0.43);
                 in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
             }
 
@@ -348,6 +352,10 @@ public class main extends LinearOpMode {
 
             //Turret Handler
             turretMovement(turetta, tRawPos, minTurretSpeed);
+
+            hoodError = hoodError - timer.milliseconds()/600*0.015 < 0 ? 0 : hoodError - timer.milliseconds()/600*0.015;
+            outputError = outputError - timer.milliseconds()/600*0.04 < 1 ? 1 : outputError - timer.milliseconds()/600*0.04;
+            telemetry.addData("hoodErr", hoodError);
 
             telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("loop", "%.1f ms", timer.milliseconds());
