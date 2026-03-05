@@ -154,6 +154,9 @@ public class auto extends LinearOpMode {
         DcMotor in = hardwareMap.get(DcMotor.class, "in"); //Intake
         DcMotor turetta = hardwareMap.get(DcMotor.class, "turetta"); //Torretta
 
+        turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
         in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         Servo levetta = hardwareMap.get(Servo.class, "levetta"); //Outtake server
@@ -167,54 +170,68 @@ public class auto extends LinearOpMode {
         //Robot Context Init
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, gianluca, in, turetta, outL, outR, levetta, imu, tagProcessor, colore);
 
-        //Turret Homing Process
-        telemetry.addData("Status", "Homing Turret");
-        telemetry.update();
-        turretHoming(toccami, turetta);
-
-        telemetry.addData("Status", "Robot Ready :)");
-        telemetry.update();
-
         waitForStart();
 
-        while(turretMovement(turetta, TURRET_OFFSET-200, 0.1)) {idle();};
+        tRawPos = TURRET_OFFSET+200;
+        while(turretMovement(turetta, TURRET_OFFSET+200, 0.1)) {idle();};
 
-        //shoot(ctx, 10000);
-        align(ctx, 15, 0.2);
-        straight(ctx, 40, 0.3, false);
-        align(ctx, -90, 0.2);
-        straight(ctx, 60, 0.3, true);
+        shoot(ctx, 9000);
+
+        straight(ctx, 62, 0.8, false);
+
+        align(ctx, 90, 0.4);
+
+        straight(ctx, 85, 0.3, true);
+
+        align(ctx, 60, 0.4);
+
+        straight(ctx, -100, 0.8, false);
+
+        tRawPos = TURRET_OFFSET-400;
+        while(turretMovement(turetta, TURRET_OFFSET-400, 0.1)) {idle();};
+
+        shoot(ctx, 9000);
 
         timer.reset();
 
-        while(turretMovement(turetta, TURRET_OFFSET, 0.1)) {idle();};
+        while(turretMovement(turetta, 0, 0.1)) {idle();};
         //Camera Killer
         visionPortal.close();
     }
 
-    private void straight(ctx ctx, double cm, double speed, boolean intake) {
-        double cmToTicks = 384.5;
+    private void straight(ctx ctx, double cm, double maxSpeed, boolean intake) {
+        double cmToTicks = 384.5 / (Math.PI * 10.4); // Ticks per cm
+        double targetTicks = cm * cmToTicks;
+        double kP = 0.004;      // Proportional gain: How "hard" it pushes to reach the target
+        double tolerance = 15;  // Ticks of allowed error (roughly 0.5cm)
+        double minSpeed = 0.12; // Minimum power to overcome friction/static weight
 
-        double ticks = cmToTicks * cm / (Math.PI * 10.4);
-
+        //Reset Encoders
         ctx.lFd.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         ctx.lBd.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         ctx.rBd.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         ctx.rFd.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
 
-        ctx.lFd.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        ctx.lBd.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        ctx.rBd.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        ctx.rFd.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        ctx.lFd.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        ctx.lBd.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        ctx.rBd.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        ctx.rFd.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
-        telemetry.addData("ciao", ctx.lFd.getCurrentPosition());
-        telemetry.addData("ticks", ticks);
-        telemetry.update();
+        while (opModeIsActive()) {
+            int currentPos = ctx.lFd.getCurrentPosition();
+            double error = targetTicks - currentPos;
 
-       sleep(5);
+            //Exit condition
+            if (Math.abs(error) < tolerance) break;
 
-        while (Math.abs(ctx.lFd.getCurrentPosition()) < ticks) {
-            double p = speed * Math.signum(cm);
+            //Calculate Power (Error * Gain)
+            double p = error * kP;
+
+            //Apply "Floor" and "Ceiling" to speed
+            double signedMin = Math.signum(p) * minSpeed;
+            if (Math.abs(p) < minSpeed) p = signedMin;
+
+            p = Math.max(-maxSpeed, Math.min(p, maxSpeed));
 
             ctx.lFd.setPower(p);
             ctx.lBd.setPower(p);
@@ -222,8 +239,14 @@ public class auto extends LinearOpMode {
             ctx.rBd.setPower(p);
 
             if (intake) ctx.in.setPower(1);
+
+            telemetry.addData("Target Ticks", targetTicks);
+            telemetry.addData("Current Ticks", currentPos);
+            telemetry.addData("Power", p);
+            telemetry.update();
         }
 
+        // 6. Hard stop
         ctx.lFd.setPower(0);
         ctx.lBd.setPower(0);
         ctx.rFd.setPower(0);
@@ -231,39 +254,54 @@ public class auto extends LinearOpMode {
         ctx.in.setPower(0);
     }
 
-    private void align(ctx ctx, double targetDeg, double maxPower) {
-        double tolerance = 2; // degrees
-        double currentDeg = Math.toDegrees(-ctx.imu.getRobotYawPitchRollAngles().getYaw());
+    private void align(ctx ctx, double targetDeg, double maxSpeed) {
+        double tolerance = 1.0; // How close is "good enough"
+        double kP = 0.015;      // Increased strength (0.005 was too low)
+        double minPower = 0.2; // Minimum power to overcome carpet friction
 
-        while (opModeIsActive() && Math.abs(angleDiff(targetDeg, currentDeg)) > tolerance) {
-            double error = angleDiff(targetDeg, currentDeg);
+        while (opModeIsActive()) {
+            double currentAngle = degreeWrap(ctx.imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES));
 
-            // Proportional control: smaller error => smaller power
-            double p = Math.signum(error) * Math.min(maxPower, Math.max(0.05, Math.abs(error) / 30 * maxPower));
+            //Calculate shortest distance to target
+            double error = degreeWrap(targetDeg - currentAngle);
 
-            // Apply mecanum rotation powers
-            ctx.lFd.setPower(-p);
-            ctx.lBd.setPower(-p);
-            ctx.rFd.setPower(p);
-            ctx.rBd.setPower(p);
+            // Exit if we are within tolerance
+            if (Math.abs(error) <= tolerance) break;
 
-            sleep(10); // Small delay for loop stability
-            currentDeg = Math.toDegrees(-ctx.imu.getRobotYawPitchRollAngles().getYaw());
+            //Proportional calculation
+            double motorPower = error * kP;
+
+            //Add minPower so it doesn't stall near the target
+            if (Math.abs(motorPower) < minPower) {
+                motorPower = Math.signum(motorPower) * minPower;
+            }
+
+            //Cap at maxSpeed
+            motorPower = Math.max(-maxSpeed, Math.min(motorPower, maxSpeed));
+
+            //Apply to motors
+            ctx.lFd.setPower(-motorPower);
+            ctx.lBd.setPower(-motorPower);
+            ctx.rFd.setPower(motorPower);
+            ctx.rBd.setPower(motorPower);
+
+            telemetry.addData("Target", targetDeg);
+            telemetry.addData("Current", currentAngle);
+            telemetry.addData("Error", error);
+            telemetry.update();
         }
 
-        // Stop motors
+        // Brake
         ctx.lFd.setPower(0);
         ctx.lBd.setPower(0);
         ctx.rFd.setPower(0);
         ctx.rBd.setPower(0);
     }
 
-    // Returns the smallest difference between two angles (-180 to +180)
-    private double angleDiff(double target, double current) {
-        double diff = target - current;
-        while (diff > 180) diff -= 360;
-        while (diff < -180) diff += 360;
-        return diff;
+    private double degreeWrap(double angle) {
+        while (angle > 180) angle -= 360;
+        while (angle <= -180) angle += 360;
+        return angle;
     }
 
     private void shoot(ctx ctx, double ms) {
@@ -389,6 +427,7 @@ public class auto extends LinearOpMode {
             telemetry.update();
             timer3.reset();
         }
+        ctx.gianluca.setPower(0);
     }
 
     //Mecanum Drive

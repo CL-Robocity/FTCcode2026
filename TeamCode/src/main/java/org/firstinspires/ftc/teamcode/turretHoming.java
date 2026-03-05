@@ -12,35 +12,8 @@ import com.qualcomm.robotcore.hardware.IMU;
 @TeleOp(name="TurretHoming", group="Main")
 public class turretHoming extends LinearOpMode {
 
-    //timer obj
-    ElapsedTime timer = new ElapsedTime();
-
     //MAIN GLOBAL CONSTANTS
-    boolean DEBUGGING = false; //Debugging Const
-    double SPEED = .5; //Robot Speed
-    double PaY = -4.99, PrX = 9.73, R = 2, N = 8192, KP = 2; //Odometry Constants
     int TURRET_OFFSET = 1320; //Turret Starting Position
-    int TURRET_MAX = 2600, TURRET_MIN = -70; //Turret Constraints
-    double AUTOAIM_MIN_SPEED = 0.01, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
-    int QR_LIVE_TIME = 1000; //QR Code Expire time
-    double CAMERA_OFFSET = 5; //Camera Offset
-    double RAD_TO_TICKS = 1325/Math.PI; //Turret Angle to Motor Ticks
-    double POWER_TO_TICKS = 3.5; //Motor Power to Turret Ticks
-    double TURRET_ACCEL = 0.001; //Turret Acceleration
-    double ERR = 10;
-    double cmTickRatio = 2 * Math.PI * R / N;
-
-    //MAIN GLOBAL VARIABLES
-    final double[] pos = {0, 0, 0, 0}; //Global Robot x, y, h, Δh
-    double hoodPos = .5; //Hood Position
-    double tRawPos = TURRET_OFFSET;
-    double oParallel = 0, oPerp = 0, oHeading = 0, oTurret = TURRET_OFFSET; //Old Odometry values vars, Old Turret Pos
-    double[] turretLock = {-999, 0}; //Turret Lock Position
-    double speed = SPEED; //Robot Current Speed
-    long levettaTime = 0, levettaWaiter = 0; //Outtake server clock
-    int levettaBool = 0; //Levetta cycle activator
-    double[] lastKnownQR = {-999, -999, 0, 0}; //Last QRcode saved
-    double hoodError = 0, outputError = 1;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -78,13 +51,6 @@ public class turretHoming extends LinearOpMode {
         //Reset encoder
         turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-        //Move to offset position
-        turetta.setPower(0.1);
-        while (!isStopRequested() && turetta.getCurrentPosition() < TURRET_OFFSET) {
-            idle();
-        }
-        turetta.setPower(0);
     }
 
     //Robot Hardware context class

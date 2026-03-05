@@ -150,6 +150,9 @@ public class main extends LinearOpMode {
         DcMotor in = hardwareMap.get(DcMotor.class, "in"); //Intake
         DcMotor turetta = hardwareMap.get(DcMotor.class, "turetta"); //Torretta
 
+        turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
         in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         Servo levetta = hardwareMap.get(Servo.class, "levetta"); //Outtake server
@@ -163,17 +166,14 @@ public class main extends LinearOpMode {
         //Robot Context Init
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
 
-        //Turret Homing Process
-        telemetry.addData("Status", "Homing Turret");
-        telemetry.update();
-        turretHoming(toccami, turetta);
-
         telemetry.addData("Status", "Robot Ready :)");
         telemetry.update();
 
         waitForStart();
 
         timer.reset();
+
+        tRawPos = TURRET_OFFSET;
 
         while (opModeIsActive()) {
             odometry(ctx);
