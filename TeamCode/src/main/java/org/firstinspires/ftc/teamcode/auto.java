@@ -45,7 +45,7 @@ public class auto extends LinearOpMode {
     int TURRET_OFFSET = 1320; //Turret Starting Position
     int TURRET_MAX = 2600, TURRET_MIN = -70; //Turret Constraints
     double AUTOAIM_MIN_SPEED = 0.01, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
-    int QR_LIVE_TIME = 1000; //QR Code Expire time
+    int QR_LIVE_TIME = 2000; //QR Code Expire time
     double CAMERA_OFFSET = 5; //Camera Offset
     double RAD_TO_TICKS = 1325/Math.PI; //Turret Angle to Motor Ticks
     double POWER_TO_TICKS = 3.5; //Motor Power to Turret Ticks
@@ -94,8 +94,6 @@ public class auto extends LinearOpMode {
         AprilTagLibrary tagLibrary = new AprilTagLibrary.Builder()
                 .addTag(20, "Blu", 41, DistanceUnit.CM)
                 .addTag(24, "Red", 41, DistanceUnit.CM)
-                .addTag(23, "Giacomo", 41, DistanceUnit.CM)
-                .addTag(21, "jesus", 41, DistanceUnit.CM)
                 .build();
 
         AprilTagProcessor tagProcessor = new AprilTagProcessor.Builder()
@@ -115,7 +113,7 @@ public class auto extends LinearOpMode {
                 .enableLiveView(DEBUGGING)
                 .build();
 
-        setManualExposure(visionPortal, 1, 200);
+        setManualExposure(visionPortal, 2, 200);
         if (DEBUGGING) FtcDashboard.getInstance().startCameraStream(visionPortal, 24);
 
         //Odometry Encoders Init
@@ -171,26 +169,30 @@ public class auto extends LinearOpMode {
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, gianluca, in, turetta, outL, outR, levetta, imu, tagProcessor, colore);
 
         waitForStart();
+        gianluca.setPower(0.8);
 
         tRawPos = TURRET_OFFSET+200;
         while(turretMovement(turetta, TURRET_OFFSET+200, 0.1)) {idle();};
 
-        shoot(ctx, 9000);
+        shoot(ctx, 7000, 1000);
 
-        straight(ctx, 62, 0.8, false);
+        straight(ctx, 60, 0.6, false, false);
+        sleep(500);
 
-        align(ctx, 90, 0.4);
+        align(ctx, 90, 0.3);
 
-        straight(ctx, 85, 0.3, true);
+        straight(ctx, 90, 0.3, true, false);
 
-        align(ctx, 60, 0.4);
+        align(ctx, 60, 0.3);
 
-        straight(ctx, -100, 0.8, false);
+        straight(ctx, -90, 0.6, false, true);
 
         tRawPos = TURRET_OFFSET-400;
         while(turretMovement(turetta, TURRET_OFFSET-400, 0.1)) {idle();};
 
-        shoot(ctx, 9000);
+        shoot(ctx, 7000, 1000);
+
+        straight(ctx, 50, 1, false, true);
 
         timer.reset();
 
@@ -199,7 +201,7 @@ public class auto extends LinearOpMode {
         visionPortal.close();
     }
 
-    private void straight(ctx ctx, double cm, double maxSpeed, boolean intake) {
+    private void straight(ctx ctx, double cm, double maxSpeed, boolean intake, boolean flywheel) {
         double cmToTicks = 384.5 / (Math.PI * 10.4); // Ticks per cm
         double targetTicks = cm * cmToTicks;
         double kP = 0.004;      // Proportional gain: How "hard" it pushes to reach the target
@@ -239,6 +241,7 @@ public class auto extends LinearOpMode {
             ctx.rBd.setPower(p);
 
             if (intake) ctx.in.setPower(1);
+            if (flywheel) ctx.gianluca.setPower(0.7);
 
             telemetry.addData("Target Ticks", targetTicks);
             telemetry.addData("Current Ticks", currentPos);
@@ -304,13 +307,13 @@ public class auto extends LinearOpMode {
         return angle;
     }
 
-    private void shoot(ctx ctx, double ms) {
+    private void shoot(ctx ctx, double ms, double delay) {
         boolean triangle = true, dpad_left = true;
         timer2.reset();
         timer3.reset();
         double hoodError = 0, outputError = 1;
         while (opModeIsActive() && timer2.milliseconds() < ms) {
-            boolean cross = timer2.milliseconds() > 5000;
+            boolean cross = timer2.milliseconds() > delay;
             double input = 0; double output = 0, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
 
             if (!ctx.tagProcessor.getDetections().isEmpty() && triangle) {
@@ -338,23 +341,20 @@ public class auto extends LinearOpMode {
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999; //Kill expired QR
 
             if (lastKnownQR[0] != -999 && dpad_left) {
-                output = (lastKnownQR[1]/100)/7 + 0.32;
+                output = (lastKnownQR[1]/100)/7 + 0.36;
 
                 if (lastKnownQR[1] < 250) {
                     hoodPos = .53;
-                    output+= 0.12;
+                    output+= 0.05;
                 } else {
                     hoodPos = .6;
                 }
             }
-            telemetry.addData("timer", timer.milliseconds());
-            telemetry.addData("timer2", timer2.milliseconds());
-            telemetry.addData("timer3", timer3.milliseconds());
 
             //Autoaim at QR code
             double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
 
-            if (Math.abs(qrOffset) > 10 && lastKnownQR[0] != -999) {
+            if (Math.abs(qrOffset) > 10 && lastKnownQR[2] < 500) {
                 double trackSpeed = dpad_left ? Math.pow(qrOffset, 2)/(2*lastKnownQR[1]) * 0.01 : 0; //Get track speed with funciton V = x²/y * 0.1
 
                 if (Math.signum(qrOffset) == 1) {input = -Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));} //Get Tracking Direction and Normalize Raw Speed
@@ -404,7 +404,7 @@ public class auto extends LinearOpMode {
                 if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 700) { //Intake Sync Handler
                     ctx.in.setPower(1);
                     hoodError = .05;
-                    outputError = 1.1;
+                    outputError = 1.07;
                 } else {
                     ctx.in.setPower(0);
                 }

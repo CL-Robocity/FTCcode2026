@@ -41,7 +41,7 @@ public class main extends LinearOpMode {
     int TURRET_OFFSET = 1320; //Turret Starting Position
     int TURRET_MAX = 2600, TURRET_MIN = -70; //Turret Constraints
     double AUTOAIM_MIN_SPEED = 0.01, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
-    int QR_LIVE_TIME = 1000; //QR Code Expire time
+    int QR_LIVE_TIME = 2000; //QR Code Expire time
     double CAMERA_OFFSET = 5; //Camera Offset
     double RAD_TO_TICKS = 1325/Math.PI; //Turret Angle to Motor Ticks
     double POWER_TO_TICKS = 3.5; //Motor Power to Turret Ticks
@@ -90,8 +90,6 @@ public class main extends LinearOpMode {
         AprilTagLibrary tagLibrary = new AprilTagLibrary.Builder()
                 .addTag(20, "Blu", 41, DistanceUnit.CM)
                 .addTag(24, "Red", 41, DistanceUnit.CM)
-                .addTag(23, "Giacomo", 41, DistanceUnit.CM)
-                .addTag(21, "jesus", 41, DistanceUnit.CM)
                 .build();
 
         AprilTagProcessor tagProcessor = new AprilTagProcessor.Builder()
@@ -111,7 +109,7 @@ public class main extends LinearOpMode {
                 .enableLiveView(DEBUGGING)
                 .build();
 
-        setManualExposure(visionPortal, 1, 200);
+        setManualExposure(visionPortal, 2, 200);
         if (DEBUGGING) FtcDashboard.getInstance().startCameraStream(visionPortal, 24);
 
         //Odometry Encoders Init
@@ -206,7 +204,7 @@ public class main extends LinearOpMode {
             telemetry.addData("DriveMotors", "%.2f %.2f %.2f %.2f", MotArr[0], MotArr[1], MotArr[2], MotArr[3]);
 
             //QR Code Auto-Aim
-            double input = 0; double output = 0, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
+            double input = 0; double output = 0.5, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
             if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) {
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
@@ -232,11 +230,11 @@ public class main extends LinearOpMode {
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999; //Kill expired QR
 
             if (lastKnownQR[0] != -999 && gamepad2.dpad_left) {
-                output = (lastKnownQR[1]/100)/7 + 0.32;
+                output = (lastKnownQR[1]/100)/7 + 0.36;
 
                 if (lastKnownQR[1] < 250) {
                     hoodPos = .53;
-                    output+= 0.12;
+                    output+= 0.05;
                 } else {
                     hoodPos = .6;
                 }
@@ -268,7 +266,7 @@ public class main extends LinearOpMode {
             }
 
             //Main Motors Manual Handler
-            if (!gamepad2.triangle && !gamepad2.square) output=gamepad2.right_trigger; //Flywheel motor Manual Handler
+            if (!gamepad2.triangle && !gamepad2.square) output=0.5*(gamepad2.right_trigger)+0.5; //Flywheel motor Manual Handler
             if (levettaBool == 0) in.setPower(gamepad2.left_trigger); //Intake motor Handler
 
             gianluca.setPower(output * outputError);
@@ -324,7 +322,7 @@ public class main extends LinearOpMode {
                 if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 700) { //Intake Sync Handler
                     in.setPower(1);
                     hoodError = .05;
-                    outputError = 1.1;
+                    outputError = 1.07 ;
                 } else {
                     in.setPower(0);
                 }
