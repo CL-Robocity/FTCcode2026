@@ -45,7 +45,7 @@ public class auto extends LinearOpMode {
     int TURRET_OFFSET = 1320; //Turret Starting Position
     int TURRET_MAX = 2600, TURRET_MIN = -70; //Turret Constraints
     double AUTOAIM_MIN_SPEED = 0.01, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
-    int QR_LIVE_TIME = 2000; //QR Code Expire time
+    int QR_LIVE_TIME = 4000; //QR Code Expire time
     double CAMERA_OFFSET = 5; //Camera Offset
     double RAD_TO_TICKS = 1325/Math.PI; //Turret Angle to Motor Ticks
     double POWER_TO_TICKS = 3.5; //Motor Power to Turret Ticks
@@ -169,30 +169,31 @@ public class auto extends LinearOpMode {
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, gianluca, in, turetta, outL, outR, levetta, imu, tagProcessor, colore);
 
         waitForStart();
-        gianluca.setPower(0.8);
+        //gianluca.setPower(0.7);
 
         tRawPos = TURRET_OFFSET+200;
         while(turretMovement(turetta, TURRET_OFFSET+200, 0.1)) {idle();};
 
-        shoot(ctx, 7000, 1000);
+        shoot(ctx, 23000, 15000);
 
-        straight(ctx, 60, 0.6, false, false);
-        sleep(500);
+        straight(ctx, 55, 0.7, false, false);
+        /*sleep(500);
 
         align(ctx, 90, 0.3);
 
-        straight(ctx, 90, 0.3, true, false);
+        straight(ctx, 25, 0.5, false, false);
+        straight(ctx, 65, 0.3, true, false);
 
         align(ctx, 60, 0.3);
 
         straight(ctx, -90, 0.6, false, true);
 
         tRawPos = TURRET_OFFSET-400;
-        while(turretMovement(turetta, TURRET_OFFSET-400, 0.1)) {idle();};
+        while(turretMovement(turetta, TURRET_OFFSET-300, 0.1)) {idle();};
 
-        shoot(ctx, 7000, 1000);
+        shoot(ctx, 6000, 3000);
 
-        straight(ctx, 50, 1, false, true);
+        straight(ctx, 60, .5, false, false);*/
 
         timer.reset();
 
@@ -241,7 +242,7 @@ public class auto extends LinearOpMode {
             ctx.rBd.setPower(p);
 
             if (intake) ctx.in.setPower(1);
-            if (flywheel) ctx.gianluca.setPower(0.7);
+            if (flywheel) ctx.gianluca.setPower(.5);
 
             telemetry.addData("Target Ticks", targetTicks);
             telemetry.addData("Current Ticks", currentPos);
@@ -308,12 +309,13 @@ public class auto extends LinearOpMode {
     }
 
     private void shoot(ctx ctx, double ms, double delay) {
-        boolean triangle = true, dpad_left = true;
+        boolean triangle = true;
         timer2.reset();
         timer3.reset();
         double hoodError = 0, outputError = 1;
         while (opModeIsActive() && timer2.milliseconds() < ms) {
             boolean cross = timer2.milliseconds() > delay;
+            boolean dpad_left = timer2.milliseconds() > 2000;
             double input = 0; double output = 0, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
 
             if (!ctx.tagProcessor.getDetections().isEmpty() && triangle) {
@@ -341,13 +343,14 @@ public class auto extends LinearOpMode {
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999; //Kill expired QR
 
             if (lastKnownQR[0] != -999 && dpad_left) {
-                output = (lastKnownQR[1]/100)/7 + 0.36;
+                output = (lastKnownQR[1]/100)/7 + 0.375;
 
                 if (lastKnownQR[1] < 250) {
                     hoodPos = .53;
-                    output+= 0.05;
+                    output+= 0.12;
                 } else {
-                    hoodPos = .6;
+                    hoodPos = .72;
+                    output+= 0.06;
                 }
             }
 

@@ -47,6 +47,8 @@ public class main extends LinearOpMode {
     double POWER_TO_TICKS = 3.5; //Motor Power to Turret Ticks
     double TURRET_ACCEL = 0.001; //Turret Acceleration
     double ERR = 10;
+    double FLYWHEEL_MINSPEED = 0.6;
+    double POWER_Q = 0.375;
     double cmTickRatio = 2 * Math.PI * R / N;
 
     //MAIN GLOBAL VARIABLES
@@ -60,6 +62,7 @@ public class main extends LinearOpMode {
     int levettaBool = 0; //Levetta cycle activator
     double[] lastKnownQR = {-999, -999, 0, 0}; //Last QRcode saved
     double hoodError = 0, outputError = 1;
+    boolean sqaureTemp = true, circleTemp = true;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -109,7 +112,7 @@ public class main extends LinearOpMode {
                 .enableLiveView(DEBUGGING)
                 .build();
 
-        setManualExposure(visionPortal, 2, 200);
+        setManualExposure(visionPortal, 1, 150);
         if (DEBUGGING) FtcDashboard.getInstance().startCameraStream(visionPortal, 24);
 
         //Odometry Encoders Init
@@ -204,7 +207,7 @@ public class main extends LinearOpMode {
             telemetry.addData("DriveMotors", "%.2f %.2f %.2f %.2f", MotArr[0], MotArr[1], MotArr[2], MotArr[3]);
 
             //QR Code Auto-Aim
-            double input = 0; double output = 0.5, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
+            double input = 0; double output = FLYWHEEL_MINSPEED, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
             if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) {
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
@@ -229,14 +232,30 @@ public class main extends LinearOpMode {
 
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999; //Kill expired QR
 
+
+            if (gamepad2.square && sqaureTemp) {
+                sqaureTemp = false;
+                POWER_Q -= 0.01;
+            } else if (!gamepad2.square) {
+                sqaureTemp = true;
+            }
+
+            if (gamepad2.circle && circleTemp) {
+                circleTemp = false;
+                POWER_Q += 0.01;
+            } else if (!gamepad2.circle ){
+                circleTemp = true;
+            }
+
             if (lastKnownQR[0] != -999 && gamepad2.dpad_left) {
-                output = (lastKnownQR[1]/100)/7 + 0.36;
+                output = (lastKnownQR[1]/100)/7 + POWER_Q;
 
                 if (lastKnownQR[1] < 250) {
                     hoodPos = .53;
-                    output+= 0.05;
+                    output+= 0.12;
                 } else {
-                    hoodPos = .6;
+                    hoodPos = .72;
+                    output+= 0.06;
                 }
             }
             telemetry.addData("out", output * outputError);
@@ -266,7 +285,7 @@ public class main extends LinearOpMode {
             }
 
             //Main Motors Manual Handler
-            if (!gamepad2.triangle && !gamepad2.square) output=0.5*(gamepad2.right_trigger)+0.5; //Flywheel motor Manual Handler
+            if (!gamepad2.triangle && !gamepad2.square) output=FLYWHEEL_MINSPEED*(gamepad2.right_trigger)+FLYWHEEL_MINSPEED; //Flywheel motor Manual Handler
             if (levettaBool == 0) in.setPower(gamepad2.left_trigger); //Intake motor Handler
 
             gianluca.setPower(output * outputError);
@@ -307,7 +326,7 @@ public class main extends LinearOpMode {
                 telemetry.addData("dt", dt);
 
                 if (dt < 500) { //Stage1: Push up to "ready" postition
-                    if (rgb.blue > 0.001) { //Activate only if a ball is detected
+                    if (true) { //Activate only if a ball is detected
                         levetta.setPosition(.61);
                         levettaBool = 2;
                     }
