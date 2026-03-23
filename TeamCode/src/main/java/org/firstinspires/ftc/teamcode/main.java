@@ -4,6 +4,7 @@ import android.util.Size;
 
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -28,6 +29,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+@Disabled
 @TeleOp(name="MainDrive", group="Main")
 public class main extends LinearOpMode {
 
@@ -48,7 +50,7 @@ public class main extends LinearOpMode {
     double TURRET_ACCEL = 0.001; //Turret Acceleration
     double ERR = 10;
     double FLYWHEEL_MINSPEED = 0.6;
-    double POWER_Q = 0.375;
+    double POWER_Q = 0.29;
     double cmTickRatio = 2 * Math.PI * R / N;
 
     //MAIN GLOBAL VARIABLES
@@ -91,7 +93,7 @@ public class main extends LinearOpMode {
 
         //Camera Init
         AprilTagLibrary tagLibrary = new AprilTagLibrary.Builder()
-                .addTag(20, "Blu", 41, DistanceUnit.CM)
+                .addTag(21, "Blu", 41, DistanceUnit.CM)
                 .addTag(24, "Red", 41, DistanceUnit.CM)
                 .build();
 
@@ -154,6 +156,9 @@ public class main extends LinearOpMode {
         turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
+        gianluca.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        gianluca.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+
         in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         Servo levetta = hardwareMap.get(Servo.class, "levetta"); //Outtake server
@@ -188,6 +193,8 @@ public class main extends LinearOpMode {
             } else {
                 speed  = SPEED; //Normal Speed
             }
+
+            telemetry.addData("powerQ", POWER_Q);
 
             //Drive Gamepad Input Handler
             double lX = gamepad1.left_stick_x, lY = -gamepad1.left_stick_y;
@@ -259,6 +266,7 @@ public class main extends LinearOpMode {
                 }
             }
             telemetry.addData("out", output * outputError);
+            telemetry.addData("testEncoder", gianluca.getCurrentPosition());
             telemetry.addData("dist", lastKnownQR[1]);
             telemetry.addData("outPer", outputError);
 
@@ -285,7 +293,7 @@ public class main extends LinearOpMode {
             }
 
             //Main Motors Manual Handler
-            if (!gamepad2.triangle && !gamepad2.square) output=FLYWHEEL_MINSPEED*(gamepad2.right_trigger)+FLYWHEEL_MINSPEED; //Flywheel motor Manual Handler
+            if (!gamepad2.triangle && !gamepad2.square) output=(1-FLYWHEEL_MINSPEED)*(gamepad2.right_trigger)+FLYWHEEL_MINSPEED; //Flywheel motor Manual Handler
             if (levettaBool == 0) in.setPower(gamepad2.left_trigger); //Intake motor Handler
 
             gianluca.setPower(output * outputError);
@@ -332,7 +340,7 @@ public class main extends LinearOpMode {
                     }
                 } else if (dt < 700) { //Stage2: SHOOT
                     if (levettaBool == 2) levetta.setPosition(.75);
-                } else if (dt < 1500) { //Stage3: Retreat
+                } else if (dt < 900) { //Stage3: Retreat
                     levetta.setPosition(0.43);
                 } else { //Stage4: Wait
                     levettaBool = 0;
@@ -340,8 +348,8 @@ public class main extends LinearOpMode {
 
                 if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 700) { //Intake Sync Handler
                     in.setPower(1);
-                    hoodError = .05;
-                    outputError = 1.07 ;
+                    //hoodError = .05;
+                    //outputError = 1.07 ;
                 } else {
                     in.setPower(0);
                 }

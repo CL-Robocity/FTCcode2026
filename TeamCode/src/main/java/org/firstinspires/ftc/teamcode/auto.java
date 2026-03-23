@@ -30,6 +30,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+@Disabled
 @Autonomous(name="AutoFrameWork", group="Main")
 public class auto extends LinearOpMode {
 
