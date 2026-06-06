@@ -43,7 +43,7 @@ public class debug extends LinearOpMode {
     final double[] pos = {0, 0, 0, 0}; //Global Robot x, y, h, Δh
     double hoodPos = .25; //Hood Position
     double shoot = 0;
-    double POWER_Q = .27;
+    double POWER_Q = .3;
     double oParallel = 0, oPerp = 0, oHeading = 0; //Old Odometry values vars
     double[] turretLock = {-999, 0}; //Turret Lock Position
     double speed = SPEED; //Robot Current Speed
@@ -219,7 +219,7 @@ public class debug extends LinearOpMode {
 
             if (lastKnownQR[0] != -999 && gamepad2.triangle) {
                 output = (lastKnownQR[1]/100)/7 + POWER_Q;
-                hoodPos = 0.565;
+                hoodPos = shoot > 700 ? .55 : .58;
             }
 
             telemetry.addData("hoodPosition", hoodPos);
@@ -240,8 +240,10 @@ public class debug extends LinearOpMode {
                 amilcare.setPosition(.25);
                 shoot = 0;
             } else {
-                laZappa.setPower(shoot < 400 ? .1 : .4);
-                bonolis.setPower(1);
+                if (shoot > 200) {
+                    laZappa.setPower(.4);
+                    bonolis.setPower(1);
+                }
                 amilcare.setPosition(0);
 
                 shoot += timer.milliseconds();
