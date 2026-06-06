@@ -43,7 +43,7 @@ public class debug extends LinearOpMode {
     final double[] pos = {0, 0, 0, 0}; //Global Robot x, y, h, Δh
     double hoodPos = .25; //Hood Position
     double shoot = 0;
-    double POWER_Q = .24;
+    double POWER_Q = .27;
     double oParallel = 0, oPerp = 0, oHeading = 0; //Old Odometry values vars
     double[] turretLock = {-999, 0}; //Turret Lock Position
     double speed = SPEED; //Robot Current Speed
@@ -217,11 +217,12 @@ public class debug extends LinearOpMode {
 
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999; //Kill expired QR
 
-            if (lastKnownQR[0] != -999 && gamepad2.dpad_left) {
+            if (lastKnownQR[0] != -999 && gamepad2.triangle) {
                 output = (lastKnownQR[1]/100)/7 + POWER_Q;
-                hoodPos = 0.25;
+                hoodPos = 0.565;
             }
 
+            telemetry.addData("hoodPosition", hoodPos);
             telemetry.addData("out", output);
             telemetry.addData("dist", lastKnownQR[1]);
 
@@ -236,14 +237,14 @@ public class debug extends LinearOpMode {
             if (!gamepad2.cross) {
                 laZappa.setPower(gamepad2.left_trigger); //Intake motor Handler
                 bonolis.setPower(gamepad2.left_trigger > 0.1 ? 0.3 : 0);
-                amilcare.setPosition(.3);
+                amilcare.setPosition(.25);
                 shoot = 0;
             } else {
-                laZappa.setPower(0.4);
-                bonolis.setPower(shoot < 400 ? 0.3 : 1);
+                laZappa.setPower(shoot < 400 ? .1 : .4);
+                bonolis.setPower(1);
                 amilcare.setPosition(0);
 
-                shoot+=timer.milliseconds();
+                shoot += timer.milliseconds();
             }
             telemetry.addData("shoot", shoot);
 
