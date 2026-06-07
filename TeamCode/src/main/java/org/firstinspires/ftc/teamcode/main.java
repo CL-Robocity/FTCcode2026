@@ -4,17 +4,13 @@ import android.util.Size;
 
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
-import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
-import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
-import com.qualcomm.robotcore.hardware.NormalizedRGBA;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
@@ -29,7 +25,6 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-@Disabled
 @TeleOp(name="MainDrive", group="Main")
 public class main extends LinearOpMode {
 
@@ -37,35 +32,24 @@ public class main extends LinearOpMode {
     ElapsedTime timer = new ElapsedTime();
 
     //MAIN GLOBAL CONSTANTS
-    boolean DEBUGGING = false; //Debugging Const
+    boolean DEBUGGING = true; //Debugging Const
     double SPEED = .5; //Robot Speed
     double PaY = -4.99, PrX = 9.73, R = 2, N = 8192, KP = 2; //Odometry Constants
-    int TURRET_OFFSET = 1320; //Turret Starting Position
-    int TURRET_MAX = 2600, TURRET_MIN = -70; //Turret Constraints
-    double AUTOAIM_MIN_SPEED = 0.01, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
-    int QR_LIVE_TIME = 2000; //QR Code Expire time
+    int QR_LIVE_TIME = 1000; //QR Code Expire time
     double CAMERA_OFFSET = 5; //Camera Offset
-    double RAD_TO_TICKS = 1325/Math.PI; //Turret Angle to Motor Ticks
-    double POWER_TO_TICKS = 3.5; //Motor Power to Turret Ticks
-    double TURRET_ACCEL = 0.001; //Turret Acceleration
-    double ERR = 10;
-    double FLYWHEEL_MINSPEED = 0.6;
-    double POWER_Q = 0.29;
     double cmTickRatio = 2 * Math.PI * R / N;
 
     //MAIN GLOBAL VARIABLES
     final double[] pos = {0, 0, 0, 0}; //Global Robot x, y, h, Δh
-    double hoodPos = .5; //Hood Position
-    double tRawPos = TURRET_OFFSET;
-    double oParallel = 0, oPerp = 0, oHeading = 0, oTurret = TURRET_OFFSET; //Old Odometry values vars, Old Turret Pos
+    double hoodPos = .25; //Hood Position
+    double shoot = 0;
+    double POWER_Q = .28;
+    double oParallel = 0, oPerp = 0, oHeading = 0; //Old Odometry values vars
     double[] turretLock = {-999, 0}; //Turret Lock Position
     double speed = SPEED; //Robot Current Speed
-    long levettaTime = 0, levettaWaiter = 0; //Outtake server clock
-    int levettaBool = 0; //Levetta cycle activator
-    double[] lastKnownQR = {-999, -999, 0, 0}; //Last QRcode saved
-    double hoodError = 0, outputError = 1;
-    boolean sqaureTemp = true, circleTemp = true;
+    double[] lastKnownQR = {-999, -999, 0, 0}; //Last QRcode savedù
 
+    double TurretPosition = 0.5;
     @Override
     public void runOpMode() throws InterruptedException {
         //Dashboard Init
@@ -93,8 +77,10 @@ public class main extends LinearOpMode {
 
         //Camera Init
         AprilTagLibrary tagLibrary = new AprilTagLibrary.Builder()
-                .addTag(21, "Blu", 41, DistanceUnit.CM)
+                .addTag(20, "Blu", 41, DistanceUnit.CM)
                 .addTag(24, "Red", 41, DistanceUnit.CM)
+                .addTag(23, "Giacomo", 41, DistanceUnit.CM)
+                .addTag(21, "jesus", 41, DistanceUnit.CM)
                 .build();
 
         AprilTagProcessor tagProcessor = new AprilTagProcessor.Builder()
@@ -114,12 +100,12 @@ public class main extends LinearOpMode {
                 .enableLiveView(DEBUGGING)
                 .build();
 
-        setManualExposure(visionPortal, 1, 150);
+        //setManualExposure(visionPortal, 1, 50);
         if (DEBUGGING) FtcDashboard.getInstance().startCameraStream(visionPortal, 24);
 
         //Odometry Encoders Init
-        DcMotor odoParallel = hardwareMap.get(DcMotor.class, "in"); //Parallel Encoder
-        DcMotor odoPerp = hardwareMap.get(DcMotor.class, "odo_y"); //Perpendicular Encoder
+        DcMotor odoParallel = hardwareMap.get(DcMotor.class, "bonolis"); //Parallel Encoder
+        DcMotor odoPerp = hardwareMap.get(DcMotor.class, "laZappa"); //Perpendicular Encoder
 
         odoParallel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         odoPerp.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
@@ -149,25 +135,25 @@ public class main extends LinearOpMode {
         rbD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         //DcMotors and Servos Init
-        DcMotor gianluca = hardwareMap.get(DcMotor.class, "gianluca"); //Flywheel
-        DcMotor in = hardwareMap.get(DcMotor.class, "in"); //Intake
-        DcMotor turetta = hardwareMap.get(DcMotor.class, "turetta"); //Torretta
-
-        turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        DcMotor gianluca = hardwareMap.get(DcMotor.class, "gianluca"); //Flywheel bottom
+        DcMotor Daroui = hardwareMap.get(DcMotor.class, "Daroui"); //Flywheel top
+        DcMotor laZappa = hardwareMap.get(DcMotor.class, "laZappa"); //Front Intake
+        DcMotor bonolis = hardwareMap.get(DcMotor.class, "bonolis"); //Rolling Intake
 
         gianluca.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        gianluca.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        Daroui.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
 
-        in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        gianluca.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        Daroui.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
-        Servo levetta = hardwareMap.get(Servo.class, "levetta"); //Outtake server
-        Servo outL = hardwareMap.get(Servo.class, "outL"); //Outtake hood left
-        Servo outR = hardwareMap.get(Servo.class, "outR"); //Outtake hood right
+        gianluca.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        Daroui.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
-        //Sensors
-        NormalizedColorSensor colore = hardwareMap.get(NormalizedColorSensor.class, "colors"); //Ball Color Sensor
-        TouchSensor toccami = hardwareMap.get(TouchSensor.class, "toccami"); //Homing Touch Sensor
+        Servo turettaL = hardwareMap.get(Servo.class, "turettaL"); //Turret Left
+        Servo cecchettinR = hardwareMap.get(Servo.class, "cecchettinR"); //Turret Right
+        Servo amilcare = hardwareMap.get(Servo.class, "amilcare"); //Levetta
+        Servo carlR = hardwareMap.get(Servo.class, "carlR"); //Outtake hood right
+        Servo marxL = hardwareMap.get(Servo.class, "marxL"); //Outtake hood left
 
         //Robot Context Init
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
@@ -179,8 +165,6 @@ public class main extends LinearOpMode {
 
         timer.reset();
 
-        tRawPos = TURRET_OFFSET;
-
         while (opModeIsActive()) {
             odometry(ctx);
             double x = pos[0], y = pos[1], h = pos[2];
@@ -189,12 +173,17 @@ public class main extends LinearOpMode {
             if (gamepad1.left_bumper) {
                 speed  = 1; //Max Speed
             } else if (gamepad1.left_trigger >= 0.1){
-                speed  = (SPEED - 0.1)*(1 - gamepad1.left_trigger) + 0.1; //Decelerator
+                speed  = (SPEED - 0.1) * (1 - gamepad1.left_trigger) + 0.1; //Decelerator
             } else {
                 speed  = SPEED; //Normal Speed
             }
 
-            telemetry.addData("powerQ", POWER_Q);
+            // set servo a metà
+            turettaL.setPosition(TurretPosition);
+            cecchettinR.setPosition(TurretPosition);
+
+            telemetry.addData("left_servo",turettaL.getPosition());
+            telemetry.addData("right_servo",cecchettinR.getPosition());
 
             //Drive Gamepad Input Handler
             double lX = gamepad1.left_stick_x, lY = -gamepad1.left_stick_y;
@@ -214,7 +203,7 @@ public class main extends LinearOpMode {
             telemetry.addData("DriveMotors", "%.2f %.2f %.2f %.2f", MotArr[0], MotArr[1], MotArr[2], MotArr[3]);
 
             //QR Code Auto-Aim
-            double input = 0; double output = FLYWHEEL_MINSPEED, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
+            double input = 0; double output = 0; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
             if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) {
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
@@ -225,13 +214,10 @@ public class main extends LinearOpMode {
                         lastKnownQR[1] = ty;
                         lastKnownQR[2] = 0;
                         lastKnownQR[3] = r;
-
-                        ERR = 5;
                     }
                 }
             } else {
                 telemetry.addLine("No AprilTags detected");
-                ERR = 10;
             }
 
             //QR code storing system
@@ -239,148 +225,80 @@ public class main extends LinearOpMode {
 
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999; //Kill expired QR
 
-
-            if (gamepad2.square && sqaureTemp) {
-                sqaureTemp = false;
-                POWER_Q -= 0.01;
-            } else if (!gamepad2.square) {
-                sqaureTemp = true;
-            }
-
-            if (gamepad2.circle && circleTemp) {
-                circleTemp = false;
-                POWER_Q += 0.01;
-            } else if (!gamepad2.circle ){
-                circleTemp = true;
-            }
-
-            if (lastKnownQR[0] != -999 && gamepad2.dpad_left) {
+            if (lastKnownQR[0] != -999 && gamepad2.triangle) {
                 output = (lastKnownQR[1]/100)/7 + POWER_Q;
-
-                if (lastKnownQR[1] < 250) {
-                    hoodPos = .53;
-                    output+= 0.12;
+                if (lastKnownQR[1] > 200) {
+                    hoodPos = shoot > 700 ? .45 : .56;
                 } else {
-                    hoodPos = .72;
-                    output+= 0.06;
+                    hoodPos = shoot > 700 ? .1 : .2;
                 }
+                if (shoot > 700) output += 0.04;
             }
-            telemetry.addData("out", output * outputError);
-            telemetry.addData("testEncoder", gianluca.getCurrentPosition());
+
+            telemetry.addData("hoodPosition", hoodPos);
+            telemetry.addData("out", output);
             telemetry.addData("dist", lastKnownQR[1]);
-            telemetry.addData("outPer", outputError);
 
             //Autoaim at QR code
             double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
-            telemetry.addData("r", lastKnownQR[3]);
-            telemetry.addData("dist", qrOffset);
-            if (Math.abs(qrOffset) > 10 && lastKnownQR[0] != -999) {
-                double trackSpeed = !gamepad2.dpad_left ? Math.pow(qrOffset, 2)/(2*lastKnownQR[1]) * 0.01 : 0; //Get track speed with funciton V = x²/y * 0.1
-
-                if (Math.signum(qrOffset) == 1) {input = -Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));} //Get Tracking Direction and Normalize Raw Speed
-                else {input = Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));}
-
-                minTurretSpeed = AUTOAIM_MIN_SPEED;
-            } else {
-                input = 0;
-            }
-
-            //Accelerate turret if rotating
-            if (gamepad2.triangle && Math.abs(rX) > 0.05) {
-                TURRET_ACCEL = 0.005;
-            } else {
-                TURRET_ACCEL = 0.001;
-            }
+            //
 
             //Main Motors Manual Handler
-            if (!gamepad2.triangle && !gamepad2.square) output=(1-FLYWHEEL_MINSPEED)*(gamepad2.right_trigger)+FLYWHEEL_MINSPEED; //Flywheel motor Manual Handler
-            if (levettaBool == 0) in.setPower(gamepad2.left_trigger); //Intake motor Handler
+            if (!gamepad2.triangle) {
+                output = gamepad2.right_trigger; //Flywheel motor Manual Handler
+            }
 
-            gianluca.setPower(output * outputError);
+            double intake = Math.min(1, gamepad1.right_trigger + gamepad2.left_trigger);
+            if (!gamepad2.cross) {
+                laZappa.setPower(intake); //Intake motor Handler
+                bonolis.setPower(intake > 0.1 ? 0.3 : 0);
+                amilcare.setPosition(.25);
+                shoot = 0;
+            } else {
+                if (shoot > 200) {
+                    laZappa.setPower(.4);
+                    bonolis.setPower(1);
+                } else {
+                    bonolis.setPower(-.4);
+                }
+                amilcare.setPosition(0);
+
+                shoot += timer.milliseconds();
+            }
+
+            telemetry.addData("shoot", shoot);
+
+            gianluca.setPower(output);
+            Daroui.setPower(output);
 
             //Hood Position Manual Handler
-            if ((gamepad2.dpad_down && hoodPos > 0.47) && !gamepad2.triangle) {
+            if ((gamepad2.dpad_down && hoodPos > 0) && !gamepad2.triangle) {
                 hoodPos-=0.002*timer.milliseconds(); //Lower
             }
-            if ((gamepad2.dpad_up && hoodPos < 0.8) && !gamepad2.triangle) {
+            if ((gamepad2.dpad_up && hoodPos < 0.6) && !gamepad2.triangle) {
                 hoodPos+=0.002*timer.milliseconds(); //Raise
             }
-            outL.setPosition(hoodPos - hoodError); //left
-            outR.setPosition(1-(hoodPos - hoodError)); //right
 
-            //Turret Manual Handler
-            if (!gamepad2.triangle) {
-                if (gamepad2.left_bumper) {input = 0.2; minTurretSpeed = 0.2;}
-                else if (gamepad2.right_bumper) {input = -0.2; minTurretSpeed = 0.2;}
+            if(gamepad2.right_bumper) {
+                TurretPosition += 0.001*timer.milliseconds();
+
+                TurretPosition = Math.max(0.0, Math.min(1.0, TurretPosition));
+
+                turettaL.setPosition(TurretPosition);
+                cecchettinR.setPosition(TurretPosition);
             }
 
-            //Outtake Server Clock Handler
-            if (!gamepad2.cross) { //Reset
-                levettaWaiter = System.currentTimeMillis();
+            if(gamepad2.left_bumper){
+                TurretPosition -= 0.001*timer.milliseconds();
+
+                TurretPosition = Math.max(0.0, Math.min(1.0, TurretPosition));
+
+                turettaL.setPosition(TurretPosition);
+                cecchettinR.setPosition(TurretPosition);
             }
 
-            if (gamepad2.cross && levettaBool == 0) { //Clock Init
-                in.setPower(1);
-                levettaTime = System.currentTimeMillis();
-                levettaBool = 1;
-            }
-
-            if (levettaBool > 0) { //Stages Cycle handler
-                in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
-                long dt = System.currentTimeMillis() - levettaTime;
-                NormalizedRGBA rgb = colore.getNormalizedColors();
-
-                telemetry.addData("rgb", rgb.blue);
-                telemetry.addData("dt", dt);
-
-                if (dt < 500) { //Stage1: Push up to "ready" postition
-                    if (true) { //Activate only if a ball is detected
-                        levetta.setPosition(.61);
-                        levettaBool = 2;
-                    }
-                } else if (dt < 700) { //Stage2: SHOOT
-                    if (levettaBool == 2) levetta.setPosition(.75);
-                } else if (dt < 900) { //Stage3: Retreat
-                    levetta.setPosition(0.43);
-                } else { //Stage4: Wait
-                    levettaBool = 0;
-                }
-
-                if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 700) { //Intake Sync Handler
-                    in.setPower(1);
-                    //hoodError = .05;
-                    //outputError = 1.07 ;
-                } else {
-                    in.setPower(0);
-                }
-
-            } else { //Intake servo rest position
-                levetta.setPosition(0.43);
-                in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-            }
-
-            //Turret Raw Position Handler
-            tRawPos += input * POWER_TO_TICKS * timer.milliseconds();
-            turretLock[1] += input * POWER_TO_TICKS * timer.milliseconds();
-
-            //Compensate Robot Angular Velocity if AutoAiming while rotating
-            if (gamepad2.triangle) {
-                if (turretLock[0] == -999) {
-                    turretLock[0] = h;
-                    turretLock[1] = turetta.getCurrentPosition();
-                }
-
-                tRawPos = turretLock[1] - angleWrap(h - turretLock[0])*RAD_TO_TICKS;
-            } else {
-                turretLock[0] = -999;
-            }
-
-            //Turret Handler
-            turretMovement(turetta, tRawPos, minTurretSpeed);
-
-            hoodError = hoodError - timer.milliseconds()/600*0.015 < 0 ? 0 : hoodError - timer.milliseconds()/600*0.015;
-            outputError = outputError - timer.milliseconds()/600*0.04 < 1 ? 1 : outputError - timer.milliseconds()/600*0.04;
-            telemetry.addData("hoodErr", hoodError);
+            marxL.setPosition(hoodPos); //left
+            carlR.setPosition(1-(hoodPos)); //right
 
             telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("loop", "%.1f ms", timer.milliseconds());
@@ -410,31 +328,6 @@ public class main extends LinearOpMode {
         //Normalized outputs
         double max = Math.max(1, Math.max(Math.abs(lf), Math.max(Math.abs(lb), Math.max(Math.abs(rf), Math.abs(rb)))));
         return new double[]{lf/max, lb/max, rf/max, rb/max}; //lf, lb, rf, rb
-    }
-
-    //Turret Handler
-    private void turretMovement(DcMotor turetta, double tRawPos, double minSpeed) {
-        double range = Math.abs(TURRET_MAX - TURRET_MIN); //Movement Range
-
-        double tPos = ((tRawPos + Math.abs(TURRET_MIN))%range + range) % range - Math.abs(TURRET_MIN); //tPos Normalized Position
-        double c = turetta.getCurrentPosition(); //Turret Current Position
-
-        double err = Math.abs(tPos - c); //Error
-
-        telemetry.addData("err", err);
-
-        if (err > ERR) { //Move turret
-            int dir = tPos > c ? 1 : -1; //Get direction
-
-            double d = Math.min(err, dir == 1 ? Math.abs(c - TURRET_MIN) : Math.abs(c - TURRET_MAX));//RAW Motor Power
-
-            double p = Math.max(Math.min(d * TURRET_ACCEL, 1), minSpeed) * dir; //Normalized Power Calculator
-
-            turetta.setPower(p);
-        } else {
-            turetta.setPower(0);
-            oTurret = c;
-        }
     }
 
     //Threaded Odometry function
@@ -479,30 +372,6 @@ public class main extends LinearOpMode {
         while (angle > Math.PI) angle -= 2*Math.PI;
         while (angle < -Math.PI) angle += 2*Math.PI;
         return angle;
-    }
-
-    //Turret Starting Alignment ( homing )
-    private void turretHoming(TouchSensor toccami, DcMotor turetta) {
-
-        //Move until u know where u are
-        while (!isStopRequested() && !toccami.isPressed()) {
-            turetta.setPower(-0.2);
-            idle();
-        }
-
-        //STOP e dai la precedenza
-        turetta.setPower(0);
-
-        //Reset encoder
-        turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-        //Move to offset position
-        turetta.setPower(0.1);
-        while (!isStopRequested() && turetta.getCurrentPosition() < TURRET_OFFSET) {
-            idle();
-        }
-        turetta.setPower(0);
     }
 
     //Manual Exposure camera settings
