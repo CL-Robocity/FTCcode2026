@@ -35,6 +35,7 @@ public class debug extends LinearOpMode {
     double KP_FACTOR = 6.0;
 
 
+
     final double[] pos = {0, 0, 0, 0};
     double hoodPos = .25;
     double shoot = 0;
@@ -61,6 +62,7 @@ public class debug extends LinearOpMode {
         sleep(1000);
         imu.resetYaw();
 
+
         AprilTagLibrary tagLibrary = new AprilTagLibrary.Builder()
                 .addTag(20, "Blu", 41, DistanceUnit.CM)
                 .addTag(24, "Red", 41, DistanceUnit.CM)
@@ -85,6 +87,8 @@ public class debug extends LinearOpMode {
                 .enableLiveView(DEBUGGING)
                 .build();
 
+        telemetry.addData("Vision Portal: ", "Ready :)");
+
         if (DEBUGGING) FtcDashboard.getInstance().startCameraStream(visionPortal, 24);
 
         DcMotor odoParallel = hardwareMap.get(DcMotor.class, "bonolis");
@@ -98,6 +102,7 @@ public class debug extends LinearOpMode {
         DcMotor lbD = hardwareMap.get(DcMotor.class, "lb");
         DcMotor rfD = hardwareMap.get(DcMotor.class, "rf");
         DcMotor rbD = hardwareMap.get(DcMotor.class, "rb");
+
         lfD.setDirection(DcMotor.Direction.REVERSE);
         lbD.setDirection(DcMotor.Direction.REVERSE);
         rfD.setDirection(DcMotor.Direction.FORWARD);
@@ -130,13 +135,22 @@ public class debug extends LinearOpMode {
         gianluca.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, aggressivePIDF);
         Daroui.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, aggressivePIDF);
 
+        telemetry.addData("Motors: ", "Ready :)");
+
         Servo turettaL = hardwareMap.get(Servo.class, "turettaL");
         Servo cecchettinR = hardwareMap.get(Servo.class, "cecchettinR");
         Servo amilcare = hardwareMap.get(Servo.class, "amilcare");
         Servo carlR = hardwareMap.get(Servo.class, "carlR");
         Servo marxL = hardwareMap.get(Servo.class, "marxL");
 
+        telemetry.addData("Servo: ", "ready :)");
+
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
+
+        telemetry.addData("ctx: ", "Ready :)");
+        telemetry.addData("Status", "Robot Ready :)");
+        telemetry.update();
+
         waitForStart();
         timer.reset();
 
@@ -191,7 +205,7 @@ public class debug extends LinearOpMode {
                 } else {
                     hoodPos = shoot > 700 ? .1 : .2;
                 }
-                if (shoot > 700) output += 0.04;
+                //if (shoot > 700) output += 0.04;
             }
 
             if (!gamepad2.triangle) {
@@ -202,7 +216,7 @@ public class debug extends LinearOpMode {
             gianluca.setVelocity(targetVelocity);
             Daroui.setVelocity(targetVelocity);
 
-            double intake = Math.min(1, gamepad1.right_trigger + gamepad2.left_trigger);
+            double intake = gamepad1.right_trigger > gamepad2.left_trigger ? Math.min(1, gamepad1.right_trigger) : Math.min(1, gamepad2.left_trigger);
             if (!gamepad2.cross) {
                 laZappa.setPower(intake);
                 bonolis.setPower(intake > 0.1 ? 0.3 : 0);
@@ -230,17 +244,22 @@ public class debug extends LinearOpMode {
                 hoodPos += 0.002 * timer.milliseconds();
             }
 
-            if (gamepad2.right_bumper) {
+            marxL.setPosition(hoodPos);
+            carlR.setPosition(1 - hoodPos);
+
+            if (gamepad2.right_bumper && !gamepad2.triangle) {
                 TurretPosition += 0.001 * timer.milliseconds();
                 TurretPosition = Math.max(0.0, Math.min(1.0, TurretPosition));
             }
-            if (gamepad2.left_bumper) {
+            if (gamepad2.left_bumper && !gamepad2.triangle ) {
                 TurretPosition -= 0.001 * timer.milliseconds();
                 TurretPosition = Math.max(0.0, Math.min(1.0, TurretPosition));
             }
 
-            marxL.setPosition(hoodPos);
-            carlR.setPosition(1 - hoodPos);
+            telemetry.addData("turettaL",turettaL.getPosition());
+            telemetry.addData("cecchettinR",cecchettinR.getPosition());
+
+
 
             telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("Flywheel Target", targetVelocity);
