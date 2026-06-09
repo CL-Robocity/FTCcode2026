@@ -38,13 +38,17 @@ public class debug extends LinearOpMode {
 
     final double[] pos = {0, 0, 0, 0};
     double hoodPos = .25;
-    double shoot = 0;
+    double shootTime = 0;
     double POWER_Q = .22;
     double oParallel = 0, oPerp = 0, oHeading = 0;
     double speed = SPEED;
     double[] lastKnownQR = {-999, -999, 0, 0};
     double TurretPosition = 0.5;
 
+
+
+
+    // variabili in game
 
 
     @Override
@@ -93,62 +97,70 @@ public class debug extends LinearOpMode {
 
         DcMotor odoParallel = hardwareMap.get(DcMotor.class, "bonolis");
         DcMotor odoPerp = hardwareMap.get(DcMotor.class, "laZappa");
+
+        // reset encoder delle odo
         odoParallel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         odoPerp.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         odoParallel.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         odoPerp.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
+        // riconoscimento motori di movimento
         DcMotor lfD = hardwareMap.get(DcMotor.class, "lf");
         DcMotor lbD = hardwareMap.get(DcMotor.class, "lb");
         DcMotor rfD = hardwareMap.get(DcMotor.class, "rf");
         DcMotor rbD = hardwareMap.get(DcMotor.class, "rb");
 
+        // set direzione motori
         lfD.setDirection(DcMotor.Direction.REVERSE);
         lbD.setDirection(DcMotor.Direction.REVERSE);
         rfD.setDirection(DcMotor.Direction.FORWARD);
         rbD.setDirection(DcMotor.Direction.FORWARD);
+
+        // set per runnare i motori
         lfD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         lbD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         rbD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         rfD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        // set movimento a potenza 0
         lfD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         lbD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         rfD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         rbD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        DcMotorEx gianluca = (DcMotorEx) hardwareMap.get(DcMotor.class, "gianluca");
-        DcMotorEx Daroui = (DcMotorEx) hardwareMap.get(DcMotor.class, "Daroui");
-        DcMotor laZappa = hardwareMap.get(DcMotor.class, "laZappa");
-        DcMotor bonolis = hardwareMap.get(DcMotor.class, "bonolis");
+        DcMotorEx TopFlyWheel = (DcMotorEx) hardwareMap.get(DcMotor.class, "gianluca");
+        DcMotorEx DownFlyWheel = (DcMotorEx) hardwareMap.get(DcMotor.class, "Daroui");
+        DcMotor FrontIntake = hardwareMap.get(DcMotor.class, "laZappa");
+        DcMotor IntakeRoller = hardwareMap.get(DcMotor.class, "bonolis");
 
-        gianluca.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        Daroui.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        TopFlyWheel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        DownFlyWheel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
 
-        gianluca.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        Daroui.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        TopFlyWheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        DownFlyWheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
-        gianluca.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
-        Daroui.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        TopFlyWheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        DownFlyWheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
-        PIDFCoefficients currentPIDF = gianluca.getPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER);
+        PIDFCoefficients currentPIDF = TopFlyWheel.getPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER);
         PIDFCoefficients aggressivePIDF = new PIDFCoefficients(currentPIDF.p * KP_FACTOR, currentPIDF.i, currentPIDF.d, currentPIDF.f);
-        gianluca.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, aggressivePIDF);
-        Daroui.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, aggressivePIDF);
+        TopFlyWheel.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, aggressivePIDF);
+        DownFlyWheel.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, aggressivePIDF);
 
         telemetry.addData("Motors: ", "Ready :)");
 
-        Servo turettaL = hardwareMap.get(Servo.class, "turettaL");
-        Servo cecchettinR = hardwareMap.get(Servo.class, "cecchettinR");
-        Servo amilcare = hardwareMap.get(Servo.class, "amilcare");
-        Servo carlR = hardwareMap.get(Servo.class, "carlR");
-        Servo marxL = hardwareMap.get(Servo.class, "marxL");
+        Servo LeftTurretServo = hardwareMap.get(Servo.class, "turettaL");
+        Servo RightTurretServo = hardwareMap.get(Servo.class, "cecchettinR");
+        Servo BallStopServo = hardwareMap.get(Servo.class, "amilcare");
+        Servo RampLeftServo = hardwareMap.get(Servo.class, "carlR");
+        Servo CoverRightServo = hardwareMap.get(Servo.class, "marxL");
 
-        telemetry.addData("Servo: ", "ready :)");
+        telemetry.addData("Servo: ", "Ready :)");
 
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
 
         telemetry.addData("ctx: ", "Ready :)");
-        telemetry.addData("Status", "Robot Ready :)");
+        telemetry.addData("\nStatus", "Robot Ready :)");
         telemetry.update();
 
         waitForStart();
@@ -158,38 +170,46 @@ public class debug extends LinearOpMode {
             odometry(ctx);
             double x = pos[0], y = pos[1], h = pos[2];
 
+            // set motori flywheel
+            LeftTurretServo.setPosition(TurretPosition);
+            RightTurretServo.setPosition(TurretPosition);
+
+            //gestione velocità movimento
             if (gamepad1.left_bumper) {
-                speed = 1;
+                speed = 1; // l1  --> velocità massima --> potenza 1
             } else if (gamepad1.left_trigger >= 0.1) {
-                speed = (SPEED - 0.1) * (1 - gamepad1.left_trigger) + 0.1;
+                speed = (SPEED - 0.1) * (1 - gamepad1.left_trigger) + 0.1; // l2 --> frenata
             } else {
-                speed = SPEED;
+                speed = SPEED; // velocità standard di sistema
             }
 
-            turettaL.setPosition(TurretPosition);
-            cecchettinR.setPosition(TurretPosition);
-
+            // set joystick sinistro
             double lX = gamepad1.left_stick_x, lY = -gamepad1.left_stick_y;
             lX = Math.abs(lX) < .4 ? 0 : lX;
             lY = Math.abs(lY) < .4 ? 0 : lY;
+
+            // set joystick destro
             double rX = gamepad1.right_stick_x, rY = -gamepad1.right_stick_y;
             rX = Math.abs(rX) < .2 ? 0 : rX;
             rY = Math.abs(rY) < .2 ? 0 : rY;
 
+
+            //definizione array motori e output movimento motori
             double[] MotArr = MotorOut(lX, lY, rX, rY);
             ctx.lFd.setPower(MotArr[0] * speed);
             ctx.lBd.setPower(MotArr[1] * speed);
             ctx.rFd.setPower(MotArr[2] * speed);
             ctx.rBd.setPower(MotArr[3] * speed);
 
+            // set potenza in output
             double output = 0;
-            if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) {
+            if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) { //se ha detectato qualcosa e triangolo premuto
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
                     if (tag.metadata != null) {
                         lastKnownQR[0] = tag.ftcPose.x;
                         lastKnownQR[1] = tag.ftcPose.y;
-                        lastKnownQR[2] = 0;
+                        lastKnownQR[2] = 0; // timer dal detect dell'ultimo qr code
                         lastKnownQR[3] = tag.ftcPose.yaw;
                     }
                 }
@@ -201,40 +221,45 @@ public class debug extends LinearOpMode {
             if (lastKnownQR[0] != -999 && gamepad2.triangle) {
                 output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
                 if (lastKnownQR[1] > 200) {
-                    hoodPos = shoot > 700 ? .45 : .56;
+                    hoodPos = shootTime > 700 ? .45 : .56;
                 } else {
-                    hoodPos = shoot > 700 ? .1 : .2;
+                    hoodPos = shootTime > 700 ? .1 : .2;
                 }
-                //if (shoot > 700) output += 0.04;
+                if (shootTime > 700) output += 0.04;
             }
 
             if (!gamepad2.triangle) {
                 output = gamepad2.right_trigger;
             }
 
-            double targetVelocity = output * 2500;
-            gianluca.setVelocity(targetVelocity);
-            Daroui.setVelocity(targetVelocity);
 
+            double targetVelocity = output * 2500;
+            TopFlyWheel.setVelocity(targetVelocity);
+            DownFlyWheel.setVelocity(targetVelocity);
+
+
+            // set potenza dell'intake bilaterale per entrambi i pad
             double intake = gamepad1.right_trigger > gamepad2.left_trigger ? Math.min(1, gamepad1.right_trigger) : Math.min(1, gamepad2.left_trigger);
+
+            // se non stai premendo la croce --> servo di stop non completamente fuori 
             if (!gamepad2.cross) {
-                laZappa.setPower(intake);
-                bonolis.setPower(intake > 0.1 ? 0.3 : 0);
-                amilcare.setPosition(.25);
-                shoot = 0;
+                FrontIntake.setPower(intake);
+                IntakeRoller.setPower(intake > 0.1 ? 0.3 : 0);
+                BallStopServo.setPosition(.25);
+                shootTime = 0;
             } else {
-                double currentVel = Math.abs(gianluca.getVelocity());
+                double currentVel = Math.abs(TopFlyWheel.getVelocity());
                 boolean flywheelReady = (targetVelocity > 100) && (currentVel >= (targetVelocity - 150));
 
-                if (shoot > 200) {
-                    laZappa.setPower(.4);
-                    bonolis.setPower(1);
+                if (shootTime > 200) {
+                    FrontIntake.setPower(.4);
+                    IntakeRoller.setPower(1);
                 } else {
-                    laZappa.setPower(0);
-                    bonolis.setPower(0);
+                    FrontIntake.setPower(0);
+                    IntakeRoller.setPower(0);
                 }
-                amilcare.setPosition(0);
-                shoot += timer.milliseconds();
+                BallStopServo.setPosition(0);
+                shootTime += timer.milliseconds();
             }
 
             if ((gamepad2.dpad_down && hoodPos > 0) && !gamepad2.triangle) {
@@ -244,8 +269,8 @@ public class debug extends LinearOpMode {
                 hoodPos += 0.002 * timer.milliseconds();
             }
 
-            marxL.setPosition(hoodPos);
-            carlR.setPosition(1 - hoodPos);
+            RampLeftServo.setPosition(hoodPos);
+            CoverRightServo.setPosition(1 - hoodPos);
 
             if (gamepad2.right_bumper && !gamepad2.triangle) {
                 TurretPosition += 0.001 * timer.milliseconds();
@@ -256,14 +281,14 @@ public class debug extends LinearOpMode {
                 TurretPosition = Math.max(0.0, Math.min(1.0, TurretPosition));
             }
 
-            telemetry.addData("turettaL",turettaL.getPosition());
-            telemetry.addData("cecchettinR",cecchettinR.getPosition());
+            telemetry.addData("turettaL",LeftTurretServo.getPosition());
+            telemetry.addData("cecchettinR",RightTurretServo.getPosition());
 
 
 
             telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("Flywheel Target", targetVelocity);
-            telemetry.addData("Flywheel Actual", gianluca.getVelocity());
+            telemetry.addData("Flywheel Actual", TopFlyWheel.getVelocity());
             telemetry.update();
 
             idle();
