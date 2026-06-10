@@ -39,11 +39,14 @@ public class debug extends LinearOpMode {
     final double[] pos = {0, 0, 0, 0};
     double hoodPos = .25;
     double shootTime = 0;
-    double POWER_Q = .22;
+    double POWER_Q = .27;
     double oParallel = 0, oPerp = 0, oHeading = 0;
     double speed = SPEED;
     double[] lastKnownQR = {-999, -999, 0, 0};
-    double TurretPosition = 0.5;
+    double TurretPosition = 0.52;
+    double TURRET_KP = 0.002;
+
+
 
 
 
@@ -152,12 +155,13 @@ public class debug extends LinearOpMode {
         Servo LeftTurretServo = hardwareMap.get(Servo.class, "turettaL");
         Servo RightTurretServo = hardwareMap.get(Servo.class, "cecchettinR");
         Servo BallStopServo = hardwareMap.get(Servo.class, "amilcare");
-        Servo RampLeftServo = hardwareMap.get(Servo.class, "carlR");
-        Servo CoverRightServo = hardwareMap.get(Servo.class, "marxL");
+        Servo RampLeftServo = hardwareMap.get(Servo.class, "marxL");
+        Servo CoverRightServo = hardwareMap.get(Servo.class, "carlR");
 
         telemetry.addData("Servo: ", "Ready :)");
 
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
+
 
         telemetry.addData("ctx: ", "Ready :)");
         telemetry.addData("\nStatus", "Robot Ready :)");
@@ -206,7 +210,7 @@ public class debug extends LinearOpMode {
             if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) { //se ha detectato qualcosa e triangolo premuto
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
-                    if (tag.metadata != null) {
+                    if (null != tag.metadata) {
                         lastKnownQR[0] = tag.ftcPose.x;
                         lastKnownQR[1] = tag.ftcPose.y;
                         lastKnownQR[2] = 0; // timer dal detect dell'ultimo qr code
@@ -214,7 +218,7 @@ public class debug extends LinearOpMode {
                     }
                 }
             }
-
+            // rileva qr e set della hood posizion
             lastKnownQR[2] += timer.milliseconds();
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999;
 
@@ -228,12 +232,13 @@ public class debug extends LinearOpMode {
                 if (shootTime > 700) output += 0.04;
             }
 
+            // se non stai premendo triangolo va in base al R2
             if (!gamepad2.triangle) {
                 output = gamepad2.right_trigger;
             }
 
 
-            double targetVelocity = output * 2500;
+            double targetVelocity = output * 1300 + 1200;
             TopFlyWheel.setVelocity(targetVelocity);
             DownFlyWheel.setVelocity(targetVelocity);
 
@@ -241,13 +246,13 @@ public class debug extends LinearOpMode {
             // set potenza dell'intake bilaterale per entrambi i pad
             double intake = gamepad1.right_trigger > gamepad2.left_trigger ? Math.min(1, gamepad1.right_trigger) : Math.min(1, gamepad2.left_trigger);
 
-            // se non stai premendo la croce --> servo di stop non completamente fuori 
+            // se non stai premendo la croce --> servo di stop non completamente fuori
             if (!gamepad2.cross) {
                 FrontIntake.setPower(intake);
                 IntakeRoller.setPower(intake > 0.1 ? 0.3 : 0);
                 BallStopServo.setPosition(.25);
                 shootTime = 0;
-            } else {
+            } else {// se x è premuta
                 double currentVel = Math.abs(TopFlyWheel.getVelocity());
                 boolean flywheelReady = (targetVelocity > 100) && (currentVel >= (targetVelocity - 150));
 
@@ -259,8 +264,13 @@ public class debug extends LinearOpMode {
                     IntakeRoller.setPower(0);
                 }
                 BallStopServo.setPosition(0);
+                if(shootTime > 1500){
+                    FrontIntake.setPower(.4);
+                }
                 shootTime += timer.milliseconds();
             }
+
+            // set posizione servo hood
 
             if ((gamepad2.dpad_down && hoodPos > 0) && !gamepad2.triangle) {
                 hoodPos -= 0.002 * timer.milliseconds();
@@ -269,26 +279,43 @@ public class debug extends LinearOpMode {
                 hoodPos += 0.002 * timer.milliseconds();
             }
 
+            // aggiorna posizione hood
             RampLeftServo.setPosition(hoodPos);
             CoverRightServo.setPosition(1 - hoodPos);
 
-            if (gamepad2.right_bumper && !gamepad2.triangle) {
-                TurretPosition += 0.001 * timer.milliseconds();
-                TurretPosition = Math.max(0.0, Math.min(1.0, TurretPosition));
-            }
-            if (gamepad2.left_bumper && !gamepad2.triangle ) {
-                TurretPosition -= 0.001 * timer.milliseconds();
-                TurretPosition = Math.max(0.0, Math.min(1.0, TurretPosition));
+
+
+            // autoaim oppure aim manuale
+            if (gamepad2.triangle && !tagProcessor.getDetections().isEmpty()) {
+                AprilTagDetection tag = tagProcessor.getDetections().get(0);
+                TurretPosition = tag.center.x/640 - 0.05;// aggiustamento sperimentale
+
+            } else {
+                if (gamepad2.right_bumper && !gamepad2.left_bumper) { // right bumper a destra
+                    TurretPosition += 0.001 * timer.milliseconds();
+                }
+                if (gamepad2.left_bumper && !gamepad2.right_bumper) { // left bumper a sinistra
+                    TurretPosition -= 0.001 * timer.milliseconds();
+                }
             }
 
-            telemetry.addData("turettaL",LeftTurretServo.getPosition());
-            telemetry.addData("cecchettinR",RightTurretServo.getPosition());
+            // limite torretta (90° totali = ±45°)
+            TurretPosition = Math.max(0.02, Math.min(0.98, TurretPosition));
+
+
+            telemetry.addData("LeftTurretServo",LeftTurretServo.getPosition());
+            telemetry.addData("RigheTurretServo",RightTurretServo.getPosition());
+
+            telemetry.addData("HoodLeft", RampLeftServo.getPosition());
+            telemetry.addData("HoodRight", CoverRightServo.getPosition());
 
 
 
             telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("Flywheel Target", targetVelocity);
             telemetry.addData("Flywheel Actual", TopFlyWheel.getVelocity());
+
+            telemetry.addData("Odo Parallel",)
             telemetry.update();
 
             idle();
@@ -297,6 +324,24 @@ public class debug extends LinearOpMode {
         }
         visionPortal.close();
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     private double[] MotorOut(double lX, double lY, double rX, double rY) {
         double rot = rX;
