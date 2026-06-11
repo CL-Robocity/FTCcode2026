@@ -30,29 +30,21 @@ public class debug extends LinearOpMode {
     double SPEED = .5;
     double PaY = -4.99, PrX = 9.73, R = 2, N = 8192, KP = 2;
     int QR_LIVE_TIME = 1000;
-    double CAMERA_OFFSET = 5;
+    double CAMERA_OFFSET = 0;
     double cmTickRatio = 2 * Math.PI * R / N;
-    double KP_FACTOR = 6.0;
-
-
+    double KP_FACTOR = 1.0;
 
     final double[] pos = {0, 0, 0, 0};
     double hoodPos = .25;
     double shootTime = 0;
-    double POWER_Q = .28;
+    double POWER_Q = .25;
     double oParallel = 0, oPerp = 0, oHeading = 0;
     double speed = SPEED;
     double[] lastKnownQR = {-999, -999, 0, 0};
-    double TurretPosition = 0.52;
+    double TurretPosition = 0.55;
     double TURRET_KP = 0.002;
     double output = 0;
-
-
-
-
-
     // variabili in game
-
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -68,7 +60,6 @@ public class debug extends LinearOpMode {
         imu.initialize(parameters);
         sleep(1000);
         imu.resetYaw();
-
 
         AprilTagLibrary tagLibrary = new AprilTagLibrary.Builder()
                 .addTag(20, "Blu", 41, DistanceUnit.CM)
@@ -162,7 +153,6 @@ public class debug extends LinearOpMode {
 
         ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
 
-
         telemetry.addData("ctx: ", "Ready :)");
         telemetry.addData("\nStatus", "Robot Ready :)");
         telemetry.update();
@@ -197,7 +187,6 @@ public class debug extends LinearOpMode {
             rX = Math.abs(rX) < .2 ? 0 : rX;
             rY = Math.abs(rY) < .2 ? 0 : rY;
 
-
             //definizione array motori e output movimento motori
             double[] MotArr = MotorOut(lX, lY, rX, rY);
             ctx.lFd.setPower(MotArr[0] * speed);
@@ -206,15 +195,16 @@ public class debug extends LinearOpMode {
             ctx.rBd.setPower(MotArr[3] * speed);
 
             // set potenza in output
-
             if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) { //se ha detectato qualcosa e triangolo premuto
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
-                    if (null != tag.metadata) {
+                    if (tag.metadata != null) {
                         lastKnownQR[0] = tag.ftcPose.x;
                         lastKnownQR[1] = tag.ftcPose.y;
                         lastKnownQR[2] = 0; // timer dal detect dell'ultimo qr code
                         lastKnownQR[3] = tag.ftcPose.yaw;
+
+                        telemetry.addData("qr", "x: %.2f, y: %.2f, t: %.2f, yaw: %.2f", lastKnownQR[0], lastKnownQR[1], lastKnownQR[2], lastKnownQR[3]);
                     }
                 }
             }
@@ -223,10 +213,11 @@ public class debug extends LinearOpMode {
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999;
 
             if (lastKnownQR[0] != -999 && gamepad2.triangle) {
-                output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
                 if (lastKnownQR[1] > 200) {
+                    output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
                     hoodPos = shootTime > 700 ? .45 : .56;
                 } else {
+                    output = 0.55;
                     hoodPos = shootTime > 700 ? 0.3 : 0.4;
                 }
                 if (shootTime > 700) output += 0.04;
@@ -234,14 +225,12 @@ public class debug extends LinearOpMode {
 
             // se non stai premendo triangolo va in base al R2
              if (!gamepad2.triangle) {
-                output = gamepad2.right_trigger;
+                output = Math.max(gamepad2.right_trigger, 0.5);
             }
-
 
             double targetVelocity = output * 2500;
             TopFlyWheel.setVelocity(targetVelocity);
             DownFlyWheel.setVelocity(targetVelocity);
-
 
             // set potenza dell'intake bilaterale per entrambi i pad
             double intake = gamepad1.right_trigger > gamepad2.left_trigger ? Math.min(1, gamepad1.right_trigger) : Math.min(1, gamepad2.left_trigger);
@@ -268,7 +257,6 @@ public class debug extends LinearOpMode {
             }
 
             // set posizione servo hood
-
             if ((gamepad2.dpad_down && hoodPos > 0) && !gamepad2.triangle) {
                 hoodPos -= 0.002 * timer.milliseconds();
             }
@@ -280,13 +268,19 @@ public class debug extends LinearOpMode {
             RampLeftServo.setPosition(hoodPos);
             CoverRightServo.setPosition(1 - hoodPos);
 
-
-
             // autoaim oppure aim manuale
-            if (gamepad2.triangle && !tagProcessor.getDetections().isEmpty()) {
-                AprilTagDetection tag = tagProcessor.getDetections().get(0);
-                TurretPosition = tag.center.x/640 - 0.01;// aggiustamento sperimentale
+            if (gamepad2.triangle && lastKnownQR[0] != -999) {
+                double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
+                double distance = lastKnownQR[1];// + Math.abs(48 * Math.sin(Math.PI/2 - Math.toRadians(lastKnownQR[3])));
+                telemetry.addData("qrOffset", qrOffset);
+                telemetry.addData("distance", 48 * Math.sin(Math.PI/2 - Math.toRadians(lastKnownQR[3])));
 
+                double theta = Math.atan(qrOffset / distance);
+                telemetry.addData("angle", Math.toDegrees(theta));
+
+                TurretPosition = (Math.toDegrees(theta) * 2.63 + 165) / 300;
+
+                telemetry.addData("tempPos", TurretPosition);
             } else {
                 if (gamepad2.right_bumper && !gamepad2.left_bumper) { // right bumper a destra
                     TurretPosition += 0.001 * timer.milliseconds();
@@ -300,20 +294,14 @@ public class debug extends LinearOpMode {
             TurretPosition = Math.max(0.02, Math.min(0.98, TurretPosition));
 
 
-            telemetry.addData("LeftTurretServo",LeftTurretServo.getPosition());
-            telemetry.addData("RigheTurretServo",RightTurretServo.getPosition());
+            telemetry.addData("TurretPos",LeftTurretServo.getPosition());
 
-            telemetry.addData("HoodLeft", RampLeftServo.getPosition());
-            telemetry.addData("HoodRight", CoverRightServo.getPosition());
-
-
+            telemetry.addData("HoodPos", RampLeftServo.getPosition());
 
             telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("Flywheel Target", targetVelocity);
             telemetry.addData("Flywheel Actual", TopFlyWheel.getVelocity());
 
-            telemetry.addData("Odo Parallel",odoParallel.getCurrentPosition());
-            telemetry.addData("Odo Perpendicular",odoPerp.getCurrentPosition());
             telemetry.update();
 
             idle();
