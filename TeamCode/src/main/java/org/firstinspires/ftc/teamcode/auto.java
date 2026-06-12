@@ -203,6 +203,18 @@ public class auto extends LinearOpMode {
         visionPortal.close();
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
     private void straight(ctx ctx, double cm, double maxSpeed, boolean intake, boolean flywheel) {
         double cmToTicks = 384.5 / (Math.PI * 10.4); // Ticks per cm
         double targetTicks = cm * cmToTicks;
@@ -259,6 +271,11 @@ public class auto extends LinearOpMode {
         ctx.in.setPower(0);
     }
 
+
+
+
+
+
     private void align(ctx ctx, double targetDeg, double maxSpeed) {
         double tolerance = 1.0; // How close is "good enough"
         double kP = 0.015;      // Increased strength (0.005 was too low)
@@ -303,11 +320,23 @@ public class auto extends LinearOpMode {
         ctx.rBd.setPower(0);
     }
 
+
+
+
+
+
+
     private double degreeWrap(double angle) {
         while (angle > 180) angle -= 360;
         while (angle <= -180) angle += 360;
         return angle;
     }
+
+
+
+
+
+
 
     private void shoot(ctx ctx, double ms, double delay) {
         boolean triangle = true;
@@ -433,6 +462,11 @@ public class auto extends LinearOpMode {
         }
         ctx.gianluca.setPower(0);
     }
+
+
+
+
+
 
     //Mecanum Drive
     private double[] MotorOut(double lX, double lY, double rX, double rY) {

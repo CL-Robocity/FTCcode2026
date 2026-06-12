@@ -37,7 +37,7 @@ public class debug extends LinearOpMode {
     final double[] pos = {0, 0, 0, 0};
     double hoodPos = .25;
     double shootTime = 0;
-    double POWER_Q = .25;
+    double POWER_Q = .27;
     double oParallel = 0, oPerp = 0, oHeading = 0;
     double speed = SPEED;
     double[] lastKnownQR = {-999, -999, 0, 0};
@@ -179,6 +179,10 @@ public class debug extends LinearOpMode {
 
             // set joystick sinistro
             double lX = gamepad1.left_stick_x, lY = -gamepad1.left_stick_y;
+            if(gamepad1.dpad_up) lY = 1;
+            if(gamepad1.dpad_down) lY = -1;
+            if(gamepad1.dpad_right) lX = 1;
+            if(gamepad1.dpad_left) lX = -1;
             lX = Math.abs(lX) < .4 ? 0 : lX;
             lY = Math.abs(lY) < .4 ? 0 : lY;
 
@@ -194,13 +198,13 @@ public class debug extends LinearOpMode {
             ctx.rFd.setPower(MotArr[2] * speed);
             ctx.rBd.setPower(MotArr[3] * speed);
 
-            // set potenza in output
+            // detect qr code
             if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) { //se ha detectato qualcosa e triangolo premuto
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
-                    if (tag.metadata != null) {
-                        lastKnownQR[0] = tag.ftcPose.x;
-                        lastKnownQR[1] = tag.ftcPose.y;
+                    if (tag.metadata != null && tag.metadata.id == 24) {
+                        lastKnownQR[0] = tag.ftcPose.x; // allineamento in orizzontale
+                        lastKnownQR[1] = tag.ftcPose.y; // distanza dal qr code
                         lastKnownQR[2] = 0; // timer dal detect dell'ultimo qr code
                         lastKnownQR[3] = tag.ftcPose.yaw;
 
@@ -208,24 +212,25 @@ public class debug extends LinearOpMode {
                     }
                 }
             }
-            // rileva qr e set della hood posizion
+            // set potenza in output
             lastKnownQR[2] += timer.milliseconds();
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999;
 
             if (lastKnownQR[0] != -999 && gamepad2.triangle) {
                 if (lastKnownQR[1] > 200) {
                     output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
-                    hoodPos = shootTime > 700 ? .45 : .56;
+                    hoodPos = shootTime > 700 ? 0.52 : 0.60; // dopo : prima
                 } else {
                     output = 0.55;
-                    hoodPos = shootTime > 700 ? 0.3 : 0.4;
+                    hoodPos = shootTime > 300 ? 0.5 : 0.54; // dopo : prima
                 }
                 if (shootTime > 700) output += 0.04;
             }
 
             // se non stai premendo triangolo va in base al R2
              if (!gamepad2.triangle) {
-                output = Math.max(gamepad2.right_trigger, 0.5);
+               //output = Math.max(gamepad2.right_trigger, 0.5);
+                 output = gamepad2.right_trigger;
             }
 
             double targetVelocity = output * 2500;
@@ -301,6 +306,11 @@ public class debug extends LinearOpMode {
             telemetry.addData("xyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
             telemetry.addData("Flywheel Target", targetVelocity);
             telemetry.addData("Flywheel Actual", TopFlyWheel.getVelocity());
+
+            telemetry.addData("\n DistanceQR", lastKnownQR[1]);
+
+            telemetry.addData("\n ODO PARALLEL --> ", odoParallel.getCurrentPosition());
+            telemetry.addData("ODO PERP --> ", odoPerp.getCurrentPosition());
 
             telemetry.update();
 
