@@ -189,9 +189,10 @@ public class auto extends LinearOpMode {
         telemetry.update();
 
         waitForStart();
-        straight(ctx, 100, 90, 0.5, false, false);
+        straight(ctx, 100, 90, 0.5, false, true);
         sleep(10000);
-        align(ctx, 90, 0.3);
+        align(ctx, 90, 0.3, false);
+
 
         timer.reset();
 
@@ -203,7 +204,7 @@ public class auto extends LinearOpMode {
 
 
 
-    
+
 
     /**
      * Muove il robot in qualsiasi direzione a 360° senza ruotare il muso.
@@ -304,7 +305,7 @@ public class auto extends LinearOpMode {
     /**
      * Ruota il robot sul posto fino a raggiungere l'angolo target specificato.
      */
-    private void align(ctx ctx, double targetAngleDeg, double maxPower) {
+    private void align(ctx ctx, double targetAngleDeg, double maxPower, boolean flywheel) {
         ElapsedTime turnTimer = new ElapsedTime();
 
         double targetHeadingRad = Math.toRadians(targetAngleDeg);
@@ -315,6 +316,16 @@ public class auto extends LinearOpMode {
 
         while (opModeIsActive() && turnTimer.seconds() < 3.0) {
             odometry(ctx);
+
+            // flywheel activation
+            if (flywheel) {
+                double baseVelocity = 0.45 * 2500;
+                ctx.topFly.setVelocity(baseVelocity);
+                ctx.downFly.setVelocity(baseVelocity);
+            } else {
+                ctx.topFly.setVelocity(0);
+                ctx.downFly.setVelocity(0);
+            }
 
             // Calcola l'errore angolare simmetrico [-PI, PI]
             double headingError = angleWrap(targetHeadingRad - pos[2]);

@@ -43,7 +43,7 @@ public class debug extends LinearOpMode {
     double oParallel = 0, oPerp = 0, oHeading = 0;
     double speed = SPEED;
     double[] lastKnownQR = {-999, -999, 0, 0};
-    double TurretPosition = 0.55;
+    double TurretPosition = 0.5;
     double TURRET_KP = 0.002;
     double output = 0;
     // variabili in game
@@ -170,7 +170,7 @@ public class debug extends LinearOpMode {
             LeftTurretServo.setPosition(TurretPosition);
             RightTurretServo.setPosition(TurretPosition);
 
-            //gestione velocità movimento
+            /*//gestione velocità movimento
             if (gamepad1.left_bumper) {
                 speed = 1; // l1  --> velocità massima --> potenza 1
             } else if (gamepad1.left_trigger >= 0.1) {
@@ -336,7 +336,7 @@ public class debug extends LinearOpMode {
             telemetry.addData("\n ODO PARALLEL --> ", odoParallel.getCurrentPosition());
             telemetry.addData("ODO PERP --> ", odoPerp.getCurrentPosition());
 
-            telemetry.addData("\n Fly Wheel Power : ", POWER_Q);
+            telemetry.addData("\n Fly Wheel Power : ", POWER_Q);*/
 
             telemetry.addData("\n Pointing deg : ", Math.toDegrees(Math.atan2(-gamepad1.left_stick_y,gamepad1.left_stick_x)));
             telemetry.update();
