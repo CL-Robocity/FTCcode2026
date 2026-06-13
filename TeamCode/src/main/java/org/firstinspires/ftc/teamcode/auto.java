@@ -31,7 +31,6 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-@Disabled
 @Autonomous(name="AutoFrameWork", group="Main")
 public class auto extends LinearOpMode {
 
@@ -190,7 +189,9 @@ public class auto extends LinearOpMode {
         telemetry.update();
 
         waitForStart();
-
+        straight(ctx, 100, 90, 0.5, false, false);
+        sleep(10000);
+        align(ctx, 90, 0.3);
 
         timer.reset();
 
@@ -202,55 +203,33 @@ public class auto extends LinearOpMode {
 
 
 
-
-
-
-
-
-
-
+    
 
     /**
-     * Muove il robot in qualsiasi direzione a 360° senza ruotare il muso,
-     * sfruttando la cinematica Mecanum e la logica motorOut della TeleOp.
-     *
-     * @param ctx Il contesto hardware del robot
-     * @param targetCm La distanza assoluta da percorrere in centimetri (sempre positiva)
-     * @param moveAngleDeg Angolo di movimento rispetto al robot (0°=Avanti, 90°=Destra, 180°=Indietro, 270°=Sinistra)
-     * @param speed Moltiplicatore generale della velocità dei motori [0.0, 1.0]
-     * @param flywheel Se true, accende la flywheel standard di TeleOp
-     * @param intake Se true, accende l'intake standard di TeleOp
+     * Muove il robot in qualsiasi direzione a 360° senza ruotare il muso.
      */
     private void straight(ctx ctx, double targetCm, double moveAngleDeg, double speed, boolean flywheel, boolean intake) {
         ElapsedTime moveTimer = new ElapsedTime();
 
-        // CORREZIONE LOGICA 1: KP per i GRADI (evita che lo sterzo saturi subito la potenza)
-        double KP_ALIGN = 0.025;
+        // KP per la correzione (se oscilla ancora un po' dopo il fix, scendilo a 1.2)
+        double KP_ALIGN = 1.5;
 
-        // Convertiamo l'angolo di movimento in Radianti per le funzioni Math
         double moveAngleRad = Math.toRadians(moveAngleDeg);
-
-        // distanza di decelerazione
         double decel_distance = 15.0;
+        double distace_error = 2.0;
 
-        // tolleranza nell'arrivo: errore nell'arrivo
-        double distace_error = 2;
+        double driveDirection = Math.cos(moveAngleRad);
+        double strafeDirection = Math.sin(moveAngleRad);
 
-        // Scomposizione del vettore di movimento a 360 gradi
-        double driveDirection = Math.cos(moveAngleRad);  // Componente Avanti/Indietro
-        double strafeDirection = Math.sin(moveAngleRad); // Componente Destra/Sinistra
-
-        // Registrazione della posizione di partenza assoluta dall'odometria
         double startX = pos[0];
         double startY = pos[1];
-        double targetHeading = pos[2]; // Il muso del robot rimarrà fisso in questa direzione
+        double targetHeading = pos[2];
 
         moveTimer.reset();
 
         while (opModeIsActive()) {
             odometry(ctx);
 
-            // 1. GESTIONE SISTEMI AUSILIARI (flywheel e intake)
             if (flywheel) {
                 double baseVelocity = 0.45 * 2500;
                 ctx.topFly.setVelocity(baseVelocity);
@@ -268,145 +247,101 @@ public class auto extends LinearOpMode {
                 ctx.frontIn.setPower(0);
             }
 
-            // 2. CALCOLO DELLA DISTANZA LINEARE ASSOLUTA (Pitagora)
             double deltaX = pos[0] - startX;
             double deltaY = pos[1] - startY;
             double distanceTraveled = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
             double errorCm = targetCm - distanceTraveled;
 
-            // Condizione di arrivo (tolleranza 1.0 cm)
             if (errorCm <= distace_error) {
                 break;
             }
 
-            // 3. CALCOLO DELLA MAGNITUDINE DEL MOVIMENTO
-            // Mantiene la rampa di decelerazione fluida negli ultimi 15cm
             double magnitude = Math.min(1.0, errorCm / decel_distance);
 
-            // Generazione degli input virtuali per la trazione
             double driveInput = driveDirection * magnitude;
             double strafeInput = strafeDirection * magnitude;
 
-            // 4. CORREZIONE ANGOLARE (Mantiene il robot dritto mentre trasla)
-            double headingError = angleWrap(targetHeading - pos[2]); // Assumendo restituisca Gradi [-180, 180]
-            double turnInput = headingError * KP_ALIGN;
-
             // =================================================================
-            // CINEMATICA MECANUM COMPLETA (Identica al motorOut della TeleOp)
+            // CORREZIONE APPLICATA: Adesso contrasta l'errore invece di amplificarlo
             // =================================================================
+            double headingError = angleWrap(targetHeading - pos[2]);
+            double turnInput = -headingError * KP_ALIGN;
 
-            // Calcolo raw dei canali miscelando Drive (Y), Strafe (X) e Turn (R)
             double lfRaw = driveInput + strafeInput + turnInput;
             double lbRaw = driveInput - strafeInput + turnInput;
             double rfRaw = driveInput - strafeInput - turnInput;
             double rbRaw = driveInput + strafeInput - turnInput;
 
-            // CORREZIONE REFUSO: Applicazione uniforme del moltiplicatore 'speed'
             double lfOut = lfRaw * speed;
             double lbOut = lbRaw * speed;
             double rfOut = rfRaw * speed;
             double rbOut = rbRaw * speed;
 
-            // Normalizzazione dei motori per non saturare oltre 1.0 (REV Clip)
             double maxMotorOut = Math.max(1.0, Math.max(
                     Math.max(Math.abs(lfOut), Math.abs(lbOut)),
                     Math.max(Math.abs(rfOut), Math.abs(rbOut))
             ));
 
-            // Invio definitivo della potenza normalizzata ai motori
             ctx.lFd.setPower(lfOut / maxMotorOut);
             ctx.lBd.setPower(lbOut / maxMotorOut);
             ctx.rFd.setPower(rfOut / maxMotorOut);
             ctx.rBd.setPower(rbOut / maxMotorOut);
 
-            // =================================================================
-
-            // Telemetria per i test sul campo
             telemetry.addData("=== OMNI-STRAIGHT ===", "ATTIVO");
-            telemetry.addData("Direzione Target (Angolo)", "%.1f°", moveAngleDeg);
             telemetry.addData("Distanza Percorsa", "%.1f / %.1f cm", distanceTraveled, targetCm);
-            telemetry.addData("Errore Allineamento Muso", "%.2f°", headingError);
+            telemetry.addData("Errore Muso (deg)", "%.2f°", Math.toDegrees(headingError));
             telemetry.update();
 
             idle();
         }
 
-        // Frenata di sicurezza (ZeroPowerBehavior.BRAKE farà il resto se impostato nel robotConfig)
         ctx.lFd.setPower(0);
         ctx.lBd.setPower(0);
         ctx.rFd.setPower(0);
         ctx.rBd.setPower(0);
     }
 
-
-
-
-
-
-
     /**
      * Ruota il robot sul posto fino a raggiungere l'angolo target specificato.
-     * @param ctx Il contesto hardware del robot
-     * @param targetAngleDeg L'angolo obiettivo in gradi (es. 0 per il fronte, 90 per sinistra, -90 per destra)
-     * @param maxPower La potenza massima applicabile ai motori durante la rotazione [0.1, 1.0]
      */
     private void align(ctx ctx, double targetAngleDeg, double maxPower) {
         ElapsedTime turnTimer = new ElapsedTime();
 
-        // Convertiamo il target in radianti, dato che la vostra odometria probabilmente lavora in radianti
         double targetHeadingRad = Math.toRadians(targetAngleDeg);
-
-        // Guadagno proporzionale per la rotazione.
-        // Se il robot va lungo (overshoot), abbassatelo (es. 1.5). Se si ferma prima, alzatelo (es. 2.5).
         double KP_TURN = 2.0;
-
-        // Tolleranza di precisione: il ciclo si interrompe quando l'errore è inferiore a 1 grado
         double ALLOWED_ERROR_RAD = Math.toRadians(1.0);
 
         turnTimer.reset();
 
-        // Timeout di sicurezza (es. 3 secondi) per evitare che il robot rimanga bloccato nel ciclo se oscilla
         while (opModeIsActive() && turnTimer.seconds() < 3.0) {
-            // Aggiorna la cinematica per leggere l'angolo corrente pos[2]
             odometry(ctx);
 
-            // Calcola l'errore angolare mancante applicando l'angleWrap per evitare il problema del salto +-180°
+            // Calcola l'errore angolare simmetrico [-PI, PI]
             double headingError = angleWrap(targetHeadingRad - pos[2]);
 
-            // Se l'errore è sotto la tolleranza, abbiamo raggiunto l'orientamento desiderato
             if (Math.abs(headingError) <= ALLOWED_ERROR_RAD) {
                 break;
             }
 
-            // --- CALCOLO POTENZA PROPORZIONALE ---
-            // Più il robot è vicino all'angolo corretto, più rallenta per non scivolare
             double turnPower = headingError * KP_TURN;
 
-            // Limitiamo la potenza al valore massimo deciso dal programmatore
             if (turnPower > maxPower)  turnPower = maxPower;
             if (turnPower < -maxPower) turnPower = -maxPower;
 
-            // Soglia minima di potenza: sotto a 0.12 i motori Mecanum potrebbero non far muovere il robot per l'attrito
             if (Math.abs(turnPower) < 0.12) {
                 turnPower = Math.signum(turnPower) * 0.12;
             }
 
-            // --- APPLICAZIONE POTENZA AI MOTORI ---
-            // Per girare sul posto, i motori dello stesso lato devono andare nella stessa direzione,
-            // ma in direzione opposta rispetto al lato opposto.
-            // turnPower positivo (errore positivo) = rotazione a sinistra
             double lfPower = -turnPower;
             double lbPower = -turnPower;
             double rfPower = turnPower;
             double rbPower = turnPower;
 
-            // Invia i comandi ai moduli REV
             ctx.lFd.setPower(lfPower);
             ctx.lBd.setPower(lbPower);
             ctx.rFd.setPower(rfPower);
             ctx.rBd.setPower(rbPower);
 
-            // Telemetria di controllo
             telemetry.addData("=== ALLINEAMENTO ANGOLO ===", "ROTAZIONE");
             telemetry.addData("Angolo Target (deg)", targetAngleDeg);
             telemetry.addData("Angolo Corrente (deg)", Math.toDegrees(pos[2]));
@@ -416,43 +351,33 @@ public class auto extends LinearOpMode {
             idle();
         }
 
-        // FRENATA: Spegne i motori e azzera il movimento
         ctx.lFd.setPower(0);
         ctx.lBd.setPower(0);
         ctx.rFd.setPower(0);
         ctx.rBd.setPower(0);
     }
 
-
-
-
-
-
-
-    private double degreeWrap(double angle) {
-        while (angle > 180) angle -= 360;
-        while (angle <= -180) angle += 360;
+    /**
+     * UNICO METODO DI WRAP: Gestisce in modo simmetrico i radianti nell'intervallo [-PI, PI].
+     * Fondamentale sia per l'odometria (dHeading) che per il calcolo degli errori di sterzo.
+     */
+    private double angleWrap(double angle) {
+        while (angle > Math.PI) angle -= 2 * Math.PI;
+        while (angle <= -Math.PI) angle += 2 * Math.PI;
         return angle;
     }
 
-
-
-
-
-
-
     /**
-     * Esegue il puntamento automatico tramite AprilTag (ID 24) e spara per il tempo specificato.
-     * @param durationMs Durata totale dell'azione di sparo in millisecondi (es. 3000 per svuotare il caricatore)
+     * Esegue il puntamento automatico tramite AprilTag (ID 24) e spara.
      */
     private void autoShoot(ctx ctx, double durationMs) {
-        ElapsedTime shootTimer = new ElapsedTime(); // Timer totale dello sparo
-        ElapsedTime loopTimer = new ElapsedTime();  // Timer per calcolare il delta-time del loop
+        ElapsedTime shootTimer = new ElapsedTime();
+        ElapsedTime loopTimer = new ElapsedTime();
 
-        double shootTime = 0; // Tiene traccia di quanto tempo la siringa sta spingendo
-        double currentTurretPos = 0.55; // Posizione di partenza della torretta (neutra)
+        double shootTime = 0;
+        double currentTurretPos = 0.55;
 
-        double[] localQR = {-999, -999, 0, 0}; // x, y, age, yaw
+        double[] localQR = {-999, -999, 0, 0};
         double POWER_Q = 0.27;
         double CAMERA_OFFSET = 0;
 
@@ -463,29 +388,25 @@ public class auto extends LinearOpMode {
             double dt = loopTimer.milliseconds();
             loopTimer.reset();
 
-            // 1. SCANSIONE APRILTAG (Simula la pressione costante di Triangolo)
             if (!ctx.tagProcessor.getDetections().isEmpty()) {
                 List<AprilTagDetection> tags = ctx.tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
                     if (tag.metadata != null && tag.metadata.id == 24) {
-                        localQR[0] = tag.ftcPose.x;   // Offset orizzontale
-                        localQR[1] = tag.ftcPose.y;   // Distanza
-                        localQR[2] = 0;               // Reset dell'età del dato
-                        localQR[3] = tag.ftcPose.yaw; // Orientamento tag
+                        localQR[0] = tag.ftcPose.x;
+                        localQR[1] = tag.ftcPose.y;
+                        localQR[2] = 0;
+                        localQR[3] = tag.ftcPose.yaw;
                     }
                 }
             }
 
-            // Invecchiamento del dato se il tag viene perso momentaneamente
             localQR[2] += dt;
-            if (localQR[2] > 1000) localQR[0] = -999; // Se passa più di 1 secondo, cancella il target
+            if (localQR[2] > 1000) localQR[0] = -999;
 
-            // 2. CALCOLO POTENZA FLYWHEEL E FILTRO HOOD (Dalla tua TeleOp)
             double flyOutput = 0;
             double targetHoodPos = 0.25;
 
             if (localQR[0] != -999) {
-                // Calcolo dinamico basato sulla distanza
                 if (localQR[1] > 200) {
                     flyOutput = (localQR[1] / 100) / 7 + POWER_Q;
                     targetHoodPos = shootTime > 700 ? 0.52 : 0.60;
@@ -495,42 +416,34 @@ public class auto extends LinearOpMode {
                 }
                 if (shootTime > 700) flyOutput += 0.04;
             } else {
-                // Fallback di sicurezza se non vede il tag all'inizio: usa una potenza standard media
                 flyOutput = 0.55;
                 targetHoodPos = 0.54;
             }
 
-            // Imposta velocità ai Flywheels
             double targetVelocity = flyOutput * 2500;
             ctx.topFly.setVelocity(targetVelocity);
             ctx.downFly.setVelocity(targetVelocity);
 
-            // Aggiorna posizione servi dell'Hood
             ctx.rampL.setPosition(targetHoodPos);
             ctx.coverR.setPosition(1 - targetHoodPos);
 
-            // 3. AUTOAIM DELLA TORRETTA (Dalla tua TeleOp)
             if (localQR[0] != -999) {
                 double qrOffset = localQR[0] - (48 * Math.cos(Math.PI / 2 - Math.toRadians(localQR[3])) - CAMERA_OFFSET);
                 double distance = localQR[1];
                 double theta = Math.atan(qrOffset / distance);
 
                 currentTurretPos = (Math.toDegrees(theta) * 2.63 + 165) / 300;
-                currentTurretPos = Math.max(0.02, Math.min(0.98, currentTurretPos)); // Limiti di sicurezza
+                currentTurretPos = Math.max(0.02, Math.min(0.98, currentTurretPos));
             }
 
             ctx.turretL.setPosition(currentTurretPos);
             ctx.turretR.setPosition(currentTurretPos);
 
-            // 4. LOGICA DI SPARO AUTOMATICO (Simula la pressione intelligente di X)
             double currentVel = Math.abs(ctx.topFly.getVelocity());
-            // Il Flywheel è pronto se gira ad almeno la velocità target meno una tolleranza di 150 tick/sec
             boolean flywheelReady = (targetVelocity > 100) && (currentVel >= (targetVelocity - 150));
 
             if (flywheelReady) {
-                // Se i motori sono pronti e stiamo tracciando, apriamo il BallStop e azioniamo l'intake
                 ctx.ballStop.setPosition(0);
-
                 if (shootTime > 200) {
                     ctx.frontIn.setPower(0.4);
                     ctx.inRoller.setPower(1.0);
@@ -538,29 +451,21 @@ public class auto extends LinearOpMode {
                     ctx.frontIn.setPower(0);
                     ctx.inRoller.setPower(0);
                 }
-                shootTime += dt; // Incrementa il tempo di pressione virtuale di X
+                shootTime += dt;
             } else {
-                // Se i motori scendono di giri (es. quando passa la pallina), ferma momentaneamente l'intake per ricaricare
                 ctx.frontIn.setPower(0);
                 ctx.inRoller.setPower(0);
                 ctx.ballStop.setPosition(0.25);
-                // Non azzeriamo completamente shootTime se vuoi mantenere lo stadio dell'hood,
-                // oppure puoi fare shootTime = 0 se preferisci resettare il ciclo ad ogni colpo.
             }
 
-            // Telemetria di controllo per i test sul campo
             telemetry.addData("=== AUTO SHOOT ===", "ATTIVO");
             telemetry.addData("Tempo Mancante", "%.0f ms", durationMs - shootTimer.milliseconds());
             telemetry.addData("Distanza Target", localQR[1]);
-            telemetry.addData("Flywheel Ready", flywheelReady);
-            telemetry.addData("Vel Target", targetVelocity);
-            telemetry.addData("Vel Attuale", currentVel);
             telemetry.update();
 
             idle();
         }
 
-        // 5. SPEGNIMENTO DI SICUREZZA (Fine dell'azione)
         ctx.topFly.setVelocity(0);
         ctx.downFly.setVelocity(0);
         ctx.frontIn.setPower(0);
@@ -568,127 +473,59 @@ public class auto extends LinearOpMode {
         ctx.ballStop.setPosition(0.25);
     }
 
-
-
-
-
     //Mecanum Drive
     private double[] MotorOut(double lX, double lY, double rX, double rY) {
         double rot = rX;
-
-        //Motors Raw Output
-        double y = lY/*lY*Math.cos(h)+lX*Math.sin(h)*/, x = lX/*lX*Math.cos(h)-lY*Math.sin(h)*/;
+        double y = lY, x = lX;
 
         double lf = y + x + rot;
         double lb = y - x + rot;
         double rf = y - x - rot;
         double rb = y + x - rot;
 
-        //Normalized outputs
         double max = Math.max(1, Math.max(Math.abs(lf), Math.max(Math.abs(lb), Math.max(Math.abs(rf), Math.abs(rb)))));
-        return new double[]{lf/max, lb/max, rf/max, rb/max}; //lf, lb, rf, rb
+        return new double[]{lf/max, lb/max, rf/max, rb/max};
     }
 
-    //Turret Handler
-    /*private boolean turretMovement(DcMotor turetta, double tRawPos, double minSpeed) {
-        double range = Math.abs(TURRET_MAX - TURRET_MIN); //Movement Range
-
-        double tPos = ((tRawPos + Math.abs(TURRET_MIN))%range + range) % range - Math.abs(TURRET_MIN); //tPos Normalized Position
-        double c = turetta.getCurrentPosition(); //Turret Current Position
-
-        double err = Math.abs(tPos - c); //Error
-
-        if (err > ERR) { //Move turret
-            int dir = tPos > c ? 1 : -1; //Get direction
-
-            double d = Math.min(err, dir == 1 ? Math.abs(c - TURRET_MIN) : Math.abs(c - TURRET_MAX));//RAW Motor Power
-
-            double p = Math.max(Math.min(d * TURRET_ACCEL, 1), minSpeed) * dir; //Normalized Power Calculator
-
-            turetta.setPower(p);
-            return true;
-        } else {
-            turetta.setPower(0);
-            oTurret = c;
-            return false;
-        }
-    }*/
-
-    //Threaded Odometry function
+    // Threaded Odometry function
     private void odometry(ctx ctx) {
-        //Odo Init
         double parallel = ctx.odoParallel.getCurrentPosition() * cmTickRatio;
         double perp = ctx.odoPerp.getCurrentPosition() * cmTickRatio;
 
         double imuHeading;
-        try { //Get IMU heading
+        try {
             imuHeading = ctx.imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
         } catch (Exception e) {
-            imuHeading = oHeading; // use last valid value
+            imuHeading = oHeading;
         }
 
-        //delta values
         double dParallel = parallel - oParallel;
         double dPerp = perp - oPerp;
+
+        // FISSAATO: Ora usa l'angleWrap corretto a [-PI, PI]. I delta piccoli rimangono piccoli!
         double dHeading = angleWrap(imuHeading - oHeading);
 
-        //Old Values
         oParallel = parallel;
         oPerp = perp;
         oHeading = imuHeading;
 
-        //Calculating Translate-only values
         double corrX = dParallel - dHeading * PaY;
         double corrY = dPerp + dHeading * PrX;
 
-        double midHeading = oHeading + dHeading/2; //Avg Heading MID rotation
-
+        double midHeading = oHeading + dHeading / 2;
         double cos = Math.cos(midHeading), sin = Math.sin(midHeading);
 
-        //Odometry
         pos[0] += corrX * cos - corrY * sin;
         pos[1] += corrX * sin + corrY * cos;
-        pos[2] = angleWrap(imuHeading);
+        pos[2] = angleWrap(imuHeading); // Mantiene anche la pos globale nel range corretto
     }
 
-    //Angle Wrapper from -2π to 2π
-    private double angleWrap(double angle) {
-        while (angle > 2*Math.PI) angle -= 2*Math.PI;
-        while (angle < 0) angle += 2*Math.PI;
-        return angle;
-    }
-
-    //Turret Starting Alignment ( homing )
-   /* private void turretHoming(TouchSensor toccami, DcMotor turetta) {
-
-        //Move until u know where u are
-        while (!isStopRequested() && !toccami.isPressed()) {
-            turetta.setPower(-0.2);
-            idle();
-        }
-
-        //STOP e dai la precedenza
-        turetta.setPower(0);
-
-        //Reset encoder
-        turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-        //Move to offset position
-        turetta.setPower(0.1);
-        while (!isStopRequested() && turetta.getCurrentPosition() < TURRET_OFFSET) {
-            idle();
-        }
-        turetta.setPower(0);
-    }*/
-
-    //Manual Exposure camera settings
+    // Manual Exposure camera settings
     private void setManualExposure(VisionPortal visionPortal, int exposureMS, int gain) {
         if (visionPortal == null) {
             return;
         }
 
-        //Wait till camera is loaded
         if (visionPortal.getCameraState() != VisionPortal.CameraState.STREAMING) {
             telemetry.addData("Camera", "Waiting");
             telemetry.update();
@@ -699,9 +536,7 @@ public class auto extends LinearOpMode {
             telemetry.update();
         }
 
-        //Set Manual Exposure and Gain
-        if (!isStopRequested())
-        {
+        if (!isStopRequested()) {
             ExposureControl exposureControl = visionPortal.getCameraControl(ExposureControl.class);
             if (exposureControl.getMode() != ExposureControl.Mode.Manual) {
                 exposureControl.setMode(ExposureControl.Mode.Manual);
@@ -715,7 +550,7 @@ public class auto extends LinearOpMode {
         }
     }
 
-    //Robot Hardware context class
+    // Robot Hardware context class
     static class ctx {
         public final DcMotor lFd;
         public final DcMotor lBd;
