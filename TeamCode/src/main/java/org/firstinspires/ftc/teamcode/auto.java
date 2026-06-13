@@ -7,8 +7,9 @@ import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
@@ -40,61 +41,46 @@ public class auto extends LinearOpMode {
     ElapsedTime timer3 = new ElapsedTime();
 
     //MAIN GLOBAL CONSTANTS
-    boolean DEBUGGING = false; //Debugging Const
-    double SPEED = .5; //Robot Speed
-    double PaY = -4.99, PrX = 9.73, R = 2, N = 8192, KP = 2; //Odometry Constants
-    int TURRET_OFFSET = 1320; //Turret Starting Position
-    int TURRET_MAX = 2600, TURRET_MIN = -70; //Turret Constraints
-    double AUTOAIM_MIN_SPEED = 0.01, AUTOAIM_MAX_SPEED = 0.2; //Auto-Aiming Speed
-    int QR_LIVE_TIME = 4000; //QR Code Expire time
-    double CAMERA_OFFSET = 5; //Camera Offset
-    double RAD_TO_TICKS = 1325/Math.PI; //Turret Angle to Motor Ticks
-    double POWER_TO_TICKS = 3.5; //Motor Power to Turret Ticks
-    double TURRET_ACCEL = 0.001; //Turret Acceleration
-    double ERR = 10;
+    boolean DEBUGGING = false;
+    double SPEED = .5;
+    double PaY = -4.99, PrX = 9.73, R = 2, N = 8192, KP = 2;
+    int QR_LIVE_TIME = 1000;
+    double CAMERA_OFFSET = 0;
     double cmTickRatio = 2 * Math.PI * R / N;
+    double KP_FACTOR = 1.0;
 
-    //MAIN GLOBAL VARIABLES
-    final double[] pos = {0, 0, 0, 0}; //Global Robot x, y, h, Δh
-    double hoodPos = .5; //Hood Position
-    double tRawPos = TURRET_OFFSET;
-    double oParallel = 0, oPerp = 0, oHeading = 0, oTurret = TURRET_OFFSET; //Old Odometry values vars, Old Turret Pos
-    double[] turretLock = {-999, 0}; //Turret Lock Position
-    double speed = SPEED; //Robot Current Speed
-    long levettaTime = 0, levettaWaiter = 0; //Outtake server clock
-    int levettaBool = 0;
-    double[] lastKnownQR = {-999, -999, 0, 0}; //Last QRcode saved
-
+    final double[] pos = {0, 0, 0, 0};
+    double hoodPos = .25;
+    double shootTime = 0;
+    double POWER_Q = .27;
+    double oParallel = 0, oPerp = 0, oHeading = 0;
+    double speed = SPEED;
+    double[] lastKnownQR = {-999, -999, 0, 0};
+    double TurretPosition = 0.55;
+    double TURRET_KP = 0.002;
+    double output = 0;
 
     @Override
     public void runOpMode() throws InterruptedException {
         //Dashboard Init
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
-        telemetry.addData("Status", "ASPETTA UN ATTIMO");
-        telemetry.update();
 
-        //IMU Init
         IMU imu = hardwareMap.get(IMU.class, "imu");
-
         IMU.Parameters parameters = new IMU.Parameters(
                 new RevHubOrientationOnRobot(
                         RevHubOrientationOnRobot.LogoFacingDirection.LEFT,
                         RevHubOrientationOnRobot.UsbFacingDirection.DOWN
                 )
         );
-
         imu.initialize(parameters);
-
-        telemetry.addData("Status", "Calibrating IMU");
         sleep(1000);
-        idle();
-
         imu.resetYaw();
 
-        //Camera Init
         AprilTagLibrary tagLibrary = new AprilTagLibrary.Builder()
                 .addTag(20, "Blu", 41, DistanceUnit.CM)
                 .addTag(24, "Red", 41, DistanceUnit.CM)
+                .addTag(23, "Giacomo", 41, DistanceUnit.CM)
+                .addTag(21, "jesus", 41, DistanceUnit.CM)
                 .build();
 
         AprilTagProcessor tagProcessor = new AprilTagProcessor.Builder()
@@ -114,91 +100,100 @@ public class auto extends LinearOpMode {
                 .enableLiveView(DEBUGGING)
                 .build();
 
-        setManualExposure(visionPortal, 2, 200);
+        telemetry.addData("Vision Portal: ", "Ready :)");
+
         if (DEBUGGING) FtcDashboard.getInstance().startCameraStream(visionPortal, 24);
 
-        //Odometry Encoders Init
-        DcMotor odoParallel = hardwareMap.get(DcMotor.class, "in"); //Parallel Encoder
-        DcMotor odoPerp = hardwareMap.get(DcMotor.class, "odo_y"); //Perpendicular Encoder
+        DcMotor odoParallel = hardwareMap.get(DcMotor.class, "bonolis");
+        DcMotor odoPerp = hardwareMap.get(DcMotor.class, "laZappa");
 
+        // reset encoder delle odo
         odoParallel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         odoPerp.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-
         odoParallel.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         odoPerp.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
-        //riveMotors Init
-        DcMotor lfD = hardwareMap.get(DcMotor.class, "lf"); //Left Front
-        DcMotor lbD = hardwareMap.get(DcMotor.class, "lb"); //Left Back
-        DcMotor rfD = hardwareMap.get(DcMotor.class, "rf"); //Right Front
-        DcMotor rbD = hardwareMap.get(DcMotor.class, "rb"); //Right Back
+        // riconoscimento motori di movimento
+        DcMotor lfD = hardwareMap.get(DcMotor.class, "lf");
+        DcMotor lbD = hardwareMap.get(DcMotor.class, "lb");
+        DcMotor rfD = hardwareMap.get(DcMotor.class, "rf");
+        DcMotor rbD = hardwareMap.get(DcMotor.class, "rb");
 
+        // set direzione motori
         lfD.setDirection(DcMotor.Direction.REVERSE);
         lbD.setDirection(DcMotor.Direction.REVERSE);
-        rbD.setDirection(DcMotor.Direction.FORWARD);
         rfD.setDirection(DcMotor.Direction.FORWARD);
+        rbD.setDirection(DcMotor.Direction.FORWARD);
 
+        // set per runnare i motori
         lfD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         lbD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         rbD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         rfD.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
+        // set movimento a potenza 0
         lfD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         lbD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         rfD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         rbD.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        //DcMotors and Servos Init
-        DcMotor gianluca = hardwareMap.get(DcMotor.class, "gianluca"); //Flywheel
-        DcMotor in = hardwareMap.get(DcMotor.class, "in"); //Intake
-        DcMotor turetta = hardwareMap.get(DcMotor.class, "turetta"); //Torretta
+        DcMotorEx TopFlyWheel = (DcMotorEx) hardwareMap.get(DcMotor.class, "gianluca");
+        DcMotorEx DownFlyWheel = (DcMotorEx) hardwareMap.get(DcMotor.class, "Daroui");
+        DcMotor FrontIntake = hardwareMap.get(DcMotor.class, "laZappa");
+        DcMotor IntakeRoller = hardwareMap.get(DcMotor.class, "bonolis");
 
-        turetta.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        turetta.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        TopFlyWheel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        DownFlyWheel.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
 
-        in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        TopFlyWheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        DownFlyWheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
-        Servo levetta = hardwareMap.get(Servo.class, "levetta"); //Outtake server
-        Servo outL = hardwareMap.get(Servo.class, "outL"); //Outtake hood left
-        Servo outR = hardwareMap.get(Servo.class, "outR"); //Outtake hood right
+        TopFlyWheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        DownFlyWheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
-        //Sensors
-        NormalizedColorSensor colore = hardwareMap.get(NormalizedColorSensor.class, "colors"); //Ball Color Sensor
-        TouchSensor toccami = hardwareMap.get(TouchSensor.class, "toccami"); //Homing Touch Sensor
+        PIDFCoefficients currentPIDF = TopFlyWheel.getPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER);
+        PIDFCoefficients aggressivePIDF = new PIDFCoefficients(currentPIDF.p * KP_FACTOR, currentPIDF.i, currentPIDF.d, currentPIDF.f);
+        TopFlyWheel.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, aggressivePIDF);
+        DownFlyWheel.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, aggressivePIDF);
 
-        //Robot Context Init
-        ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, gianluca, in, turetta, outL, outR, levetta, imu, tagProcessor, colore);
+        telemetry.addData("Motors: ", "Ready :)");
+
+        Servo LeftTurretServo = hardwareMap.get(Servo.class, "turettaL");
+        Servo RightTurretServo = hardwareMap.get(Servo.class, "cecchettinR");
+        Servo BallStopServo = hardwareMap.get(Servo.class, "amilcare");
+        Servo RampLeftServo = hardwareMap.get(Servo.class, "marxL");
+        Servo CoverRightServo = hardwareMap.get(Servo.class, "carlR");
+
+        telemetry.addData("Servo: ", "Ready :)");
+
+        ctx ctx = new ctx(
+                lfD,
+                lbD,
+                rfD,
+                rbD,
+                odoParallel,
+                odoPerp,
+                imu,
+                TopFlyWheel,
+                DownFlyWheel,
+                FrontIntake,
+                IntakeRoller,
+                LeftTurretServo,
+                RightTurretServo,
+                BallStopServo,
+                RampLeftServo,
+                CoverRightServo,
+                tagProcessor);
+
+        telemetry.addData("ctx: ", "Ready :)");
+        telemetry.addData("\nStatus", "Robot Ready :)");
+        telemetry.update();
 
         waitForStart();
-        //gianluca.setPower(0.7);
 
-        tRawPos = TURRET_OFFSET+200;
-        while(turretMovement(turetta, TURRET_OFFSET+200, 0.1)) {idle();};
-
-        shoot(ctx, 23000, 15000);
-
-        straight(ctx, 55, 0.7, false, false);
-        /*sleep(500);
-
-        align(ctx, 90, 0.3);
-
-        straight(ctx, 25, 0.5, false, false);
-        straight(ctx, 65, 0.3, true, false);
-
-        align(ctx, 60, 0.3);
-
-        straight(ctx, -90, 0.6, false, true);
-
-        tRawPos = TURRET_OFFSET-400;
-        while(turretMovement(turetta, TURRET_OFFSET-300, 0.1)) {idle();};
-
-        shoot(ctx, 6000, 3000);
-
-        straight(ctx, 60, .5, false, false);*/
 
         timer.reset();
 
-        while(turretMovement(turetta, 0, 0.1)) {idle();};
         //Camera Killer
         visionPortal.close();
     }
@@ -215,60 +210,132 @@ public class auto extends LinearOpMode {
 
 
 
-    private void straight(ctx ctx, double cm, double maxSpeed, boolean intake, boolean flywheel) {
-        double cmToTicks = 384.5 / (Math.PI * 10.4); // Ticks per cm
-        double targetTicks = cm * cmToTicks;
-        double kP = 0.004;      // Proportional gain: How "hard" it pushes to reach the target
-        double tolerance = 15;  // Ticks of allowed error (roughly 0.5cm)
-        double minSpeed = 0.12; // Minimum power to overcome friction/static weight
+    /**
+     * Muove il robot in qualsiasi direzione a 360° senza ruotare il muso,
+     * sfruttando la cinematica Mecanum e la logica motorOut della TeleOp.
+     *
+     * @param ctx Il contesto hardware del robot
+     * @param targetCm La distanza assoluta da percorrere in centimetri (sempre positiva)
+     * @param moveAngleDeg Angolo di movimento rispetto al robot (0°=Avanti, 90°=Destra, 180°=Indietro, 270°=Sinistra)
+     * @param speed Moltiplicatore generale della velocità dei motori [0.0, 1.0]
+     * @param flywheel Se true, accende la flywheel standard di TeleOp
+     * @param intake Se true, accende l'intake standard di TeleOp
+     */
+    private void straight(ctx ctx, double targetCm, double moveAngleDeg, double speed, boolean flywheel, boolean intake) {
+        ElapsedTime moveTimer = new ElapsedTime();
 
-        //Reset Encoders
-        ctx.lFd.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        ctx.lBd.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        ctx.rBd.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        ctx.rFd.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        // CORREZIONE LOGICA 1: KP per i GRADI (evita che lo sterzo saturi subito la potenza)
+        double KP_ALIGN = 0.025;
 
-        ctx.lFd.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        ctx.lBd.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        ctx.rBd.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        ctx.rFd.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        // Convertiamo l'angolo di movimento in Radianti per le funzioni Math
+        double moveAngleRad = Math.toRadians(moveAngleDeg);
+
+        // distanza di decelerazione
+        double decel_distance = 15.0;
+
+        // tolleranza nell'arrivo: errore nell'arrivo
+        double distace_error = 2;
+
+        // Scomposizione del vettore di movimento a 360 gradi
+        double driveDirection = Math.cos(moveAngleRad);  // Componente Avanti/Indietro
+        double strafeDirection = Math.sin(moveAngleRad); // Componente Destra/Sinistra
+
+        // Registrazione della posizione di partenza assoluta dall'odometria
+        double startX = pos[0];
+        double startY = pos[1];
+        double targetHeading = pos[2]; // Il muso del robot rimarrà fisso in questa direzione
+
+        moveTimer.reset();
 
         while (opModeIsActive()) {
-            int currentPos = ctx.lFd.getCurrentPosition();
-            double error = targetTicks - currentPos;
+            odometry(ctx);
 
-            //Exit condition
-            if (Math.abs(error) < tolerance) break;
+            // 1. GESTIONE SISTEMI AUSILIARI (flywheel e intake)
+            if (flywheel) {
+                double baseVelocity = 0.45 * 2500;
+                ctx.topFly.setVelocity(baseVelocity);
+                ctx.downFly.setVelocity(baseVelocity);
+            } else {
+                ctx.topFly.setVelocity(0);
+                ctx.downFly.setVelocity(0);
+            }
 
-            //Calculate Power (Error * Gain)
-            double p = error * kP;
+            if (intake) {
+                ctx.inRoller.setPower(0.7);
+                ctx.frontIn.setPower(0.7);
+            } else {
+                ctx.inRoller.setPower(0);
+                ctx.frontIn.setPower(0);
+            }
 
-            //Apply "Floor" and "Ceiling" to speed
-            double signedMin = Math.signum(p) * minSpeed;
-            if (Math.abs(p) < minSpeed) p = signedMin;
+            // 2. CALCOLO DELLA DISTANZA LINEARE ASSOLUTA (Pitagora)
+            double deltaX = pos[0] - startX;
+            double deltaY = pos[1] - startY;
+            double distanceTraveled = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            double errorCm = targetCm - distanceTraveled;
 
-            p = Math.max(-maxSpeed, Math.min(p, maxSpeed));
+            // Condizione di arrivo (tolleranza 1.0 cm)
+            if (errorCm <= distace_error) {
+                break;
+            }
 
-            ctx.lFd.setPower(p);
-            ctx.lBd.setPower(p);
-            ctx.rFd.setPower(p);
-            ctx.rBd.setPower(p);
+            // 3. CALCOLO DELLA MAGNITUDINE DEL MOVIMENTO
+            // Mantiene la rampa di decelerazione fluida negli ultimi 15cm
+            double magnitude = Math.min(1.0, errorCm / decel_distance);
 
-            if (intake) ctx.in.setPower(1);
-            if (flywheel) ctx.gianluca.setPower(.5);
+            // Generazione degli input virtuali per la trazione
+            double driveInput = driveDirection * magnitude;
+            double strafeInput = strafeDirection * magnitude;
 
-            telemetry.addData("Target Ticks", targetTicks);
-            telemetry.addData("Current Ticks", currentPos);
-            telemetry.addData("Power", p);
+            // 4. CORREZIONE ANGOLARE (Mantiene il robot dritto mentre trasla)
+            double headingError = angleWrap(targetHeading - pos[2]); // Assumendo restituisca Gradi [-180, 180]
+            double turnInput = headingError * KP_ALIGN;
+
+            // =================================================================
+            // CINEMATICA MECANUM COMPLETA (Identica al motorOut della TeleOp)
+            // =================================================================
+
+            // Calcolo raw dei canali miscelando Drive (Y), Strafe (X) e Turn (R)
+            double lfRaw = driveInput + strafeInput + turnInput;
+            double lbRaw = driveInput - strafeInput + turnInput;
+            double rfRaw = driveInput - strafeInput - turnInput;
+            double rbRaw = driveInput + strafeInput - turnInput;
+
+            // CORREZIONE REFUSO: Applicazione uniforme del moltiplicatore 'speed'
+            double lfOut = lfRaw * speed;
+            double lbOut = lbRaw * speed;
+            double rfOut = rfRaw * speed;
+            double rbOut = rbRaw * speed;
+
+            // Normalizzazione dei motori per non saturare oltre 1.0 (REV Clip)
+            double maxMotorOut = Math.max(1.0, Math.max(
+                    Math.max(Math.abs(lfOut), Math.abs(lbOut)),
+                    Math.max(Math.abs(rfOut), Math.abs(rbOut))
+            ));
+
+            // Invio definitivo della potenza normalizzata ai motori
+            ctx.lFd.setPower(lfOut / maxMotorOut);
+            ctx.lBd.setPower(lbOut / maxMotorOut);
+            ctx.rFd.setPower(rfOut / maxMotorOut);
+            ctx.rBd.setPower(rbOut / maxMotorOut);
+
+            // =================================================================
+
+            // Telemetria per i test sul campo
+            telemetry.addData("=== OMNI-STRAIGHT ===", "ATTIVO");
+            telemetry.addData("Direzione Target (Angolo)", "%.1f°", moveAngleDeg);
+            telemetry.addData("Distanza Percorsa", "%.1f / %.1f cm", distanceTraveled, targetCm);
+            telemetry.addData("Errore Allineamento Muso", "%.2f°", headingError);
             telemetry.update();
+
+            idle();
         }
 
-        // 6. Hard stop
+        // Frenata di sicurezza (ZeroPowerBehavior.BRAKE farà il resto se impostato nel robotConfig)
         ctx.lFd.setPower(0);
         ctx.lBd.setPower(0);
         ctx.rFd.setPower(0);
         ctx.rBd.setPower(0);
-        ctx.in.setPower(0);
     }
 
 
@@ -276,44 +343,80 @@ public class auto extends LinearOpMode {
 
 
 
-    private void align(ctx ctx, double targetDeg, double maxSpeed) {
-        double tolerance = 1.0; // How close is "good enough"
-        double kP = 0.015;      // Increased strength (0.005 was too low)
-        double minPower = 0.2; // Minimum power to overcome carpet friction
 
-        while (opModeIsActive()) {
-            double currentAngle = degreeWrap(ctx.imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES));
+    /**
+     * Ruota il robot sul posto fino a raggiungere l'angolo target specificato.
+     * @param ctx Il contesto hardware del robot
+     * @param targetAngleDeg L'angolo obiettivo in gradi (es. 0 per il fronte, 90 per sinistra, -90 per destra)
+     * @param maxPower La potenza massima applicabile ai motori durante la rotazione [0.1, 1.0]
+     */
+    private void align(ctx ctx, double targetAngleDeg, double maxPower) {
+        ElapsedTime turnTimer = new ElapsedTime();
 
-            //Calculate shortest distance to target
-            double error = degreeWrap(targetDeg - currentAngle);
+        // Convertiamo il target in radianti, dato che la vostra odometria probabilmente lavora in radianti
+        double targetHeadingRad = Math.toRadians(targetAngleDeg);
 
-            // Exit if we are within tolerance
-            if (Math.abs(error) <= tolerance) break;
+        // Guadagno proporzionale per la rotazione.
+        // Se il robot va lungo (overshoot), abbassatelo (es. 1.5). Se si ferma prima, alzatelo (es. 2.5).
+        double KP_TURN = 2.0;
 
-            //Proportional calculation
-            double motorPower = error * kP;
+        // Tolleranza di precisione: il ciclo si interrompe quando l'errore è inferiore a 1 grado
+        double ALLOWED_ERROR_RAD = Math.toRadians(1.0);
 
-            //Add minPower so it doesn't stall near the target
-            if (Math.abs(motorPower) < minPower) {
-                motorPower = Math.signum(motorPower) * minPower;
+        turnTimer.reset();
+
+        // Timeout di sicurezza (es. 3 secondi) per evitare che il robot rimanga bloccato nel ciclo se oscilla
+        while (opModeIsActive() && turnTimer.seconds() < 3.0) {
+            // Aggiorna la cinematica per leggere l'angolo corrente pos[2]
+            odometry(ctx);
+
+            // Calcola l'errore angolare mancante applicando l'angleWrap per evitare il problema del salto +-180°
+            double headingError = angleWrap(targetHeadingRad - pos[2]);
+
+            // Se l'errore è sotto la tolleranza, abbiamo raggiunto l'orientamento desiderato
+            if (Math.abs(headingError) <= ALLOWED_ERROR_RAD) {
+                break;
             }
 
-            //Cap at maxSpeed
-            motorPower = Math.max(-maxSpeed, Math.min(motorPower, maxSpeed));
+            // --- CALCOLO POTENZA PROPORZIONALE ---
+            // Più il robot è vicino all'angolo corretto, più rallenta per non scivolare
+            double turnPower = headingError * KP_TURN;
 
-            //Apply to motors
-            ctx.lFd.setPower(-motorPower);
-            ctx.lBd.setPower(-motorPower);
-            ctx.rFd.setPower(motorPower);
-            ctx.rBd.setPower(motorPower);
+            // Limitiamo la potenza al valore massimo deciso dal programmatore
+            if (turnPower > maxPower)  turnPower = maxPower;
+            if (turnPower < -maxPower) turnPower = -maxPower;
 
-            telemetry.addData("Target", targetDeg);
-            telemetry.addData("Current", currentAngle);
-            telemetry.addData("Error", error);
+            // Soglia minima di potenza: sotto a 0.12 i motori Mecanum potrebbero non far muovere il robot per l'attrito
+            if (Math.abs(turnPower) < 0.12) {
+                turnPower = Math.signum(turnPower) * 0.12;
+            }
+
+            // --- APPLICAZIONE POTENZA AI MOTORI ---
+            // Per girare sul posto, i motori dello stesso lato devono andare nella stessa direzione,
+            // ma in direzione opposta rispetto al lato opposto.
+            // turnPower positivo (errore positivo) = rotazione a sinistra
+            double lfPower = -turnPower;
+            double lbPower = -turnPower;
+            double rfPower = turnPower;
+            double rbPower = turnPower;
+
+            // Invia i comandi ai moduli REV
+            ctx.lFd.setPower(lfPower);
+            ctx.lBd.setPower(lbPower);
+            ctx.rFd.setPower(rfPower);
+            ctx.rBd.setPower(rbPower);
+
+            // Telemetria di controllo
+            telemetry.addData("=== ALLINEAMENTO ANGOLO ===", "ROTAZIONE");
+            telemetry.addData("Angolo Target (deg)", targetAngleDeg);
+            telemetry.addData("Angolo Corrente (deg)", Math.toDegrees(pos[2]));
+            telemetry.addData("Errore Rimanente (deg)", Math.toDegrees(headingError));
             telemetry.update();
+
+            idle();
         }
 
-        // Brake
+        // FRENATA: Spegne i motori e azzera il movimento
         ctx.lFd.setPower(0);
         ctx.lBd.setPower(0);
         ctx.rFd.setPower(0);
@@ -338,131 +441,132 @@ public class auto extends LinearOpMode {
 
 
 
-    private void shoot(ctx ctx, double ms, double delay) {
-        boolean triangle = true;
-        timer2.reset();
-        timer3.reset();
-        double hoodError = 0, outputError = 1;
-        while (opModeIsActive() && timer2.milliseconds() < ms) {
-            boolean cross = timer2.milliseconds() > delay;
-            boolean dpad_left = timer2.milliseconds() > 2000;
-            double input = 0; double output = 0, minTurretSpeed = 0.1; //Turret Rotation Raw input, Flywheel output, Min Turret Rotation Speed
+    /**
+     * Esegue il puntamento automatico tramite AprilTag (ID 24) e spara per il tempo specificato.
+     * @param durationMs Durata totale dell'azione di sparo in millisecondi (es. 3000 per svuotare il caricatore)
+     */
+    private void autoShoot(ctx ctx, double durationMs) {
+        ElapsedTime shootTimer = new ElapsedTime(); // Timer totale dello sparo
+        ElapsedTime loopTimer = new ElapsedTime();  // Timer per calcolare il delta-time del loop
 
-            if (!ctx.tagProcessor.getDetections().isEmpty() && triangle) {
+        double shootTime = 0; // Tiene traccia di quanto tempo la siringa sta spingendo
+        double currentTurretPos = 0.55; // Posizione di partenza della torretta (neutra)
+
+        double[] localQR = {-999, -999, 0, 0}; // x, y, age, yaw
+        double POWER_Q = 0.27;
+        double CAMERA_OFFSET = 0;
+
+        shootTimer.reset();
+        loopTimer.reset();
+
+        while (opModeIsActive() && shootTimer.milliseconds() < durationMs) {
+            double dt = loopTimer.milliseconds();
+            loopTimer.reset();
+
+            // 1. SCANSIONE APRILTAG (Simula la pressione costante di Triangolo)
+            if (!ctx.tagProcessor.getDetections().isEmpty()) {
                 List<AprilTagDetection> tags = ctx.tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
-                    if (tag.metadata != null) { //QR code detected :)
-                        double tx = tag.ftcPose.x, ty = tag.ftcPose.y, r=tag.ftcPose.yaw;//Horizontal Distance, Forward Distance
-                        //Store QR
-                        lastKnownQR[0] = tx;
-                        lastKnownQR[1] = ty;
-                        lastKnownQR[2] = 0;
-                        lastKnownQR[3] = r;
-
-                        ERR = 5;
+                    if (tag.metadata != null && tag.metadata.id == 24) {
+                        localQR[0] = tag.ftcPose.x;   // Offset orizzontale
+                        localQR[1] = tag.ftcPose.y;   // Distanza
+                        localQR[2] = 0;               // Reset dell'età del dato
+                        localQR[3] = tag.ftcPose.yaw; // Orientamento tag
                     }
                 }
-            } else {
-                telemetry.addLine("No AprilTags detected");
-                ERR = 10;
             }
 
-            //QR code storing system
-            lastKnownQR[2]+=timer3.milliseconds(); //Make time pass
+            // Invecchiamento del dato se il tag viene perso momentaneamente
+            localQR[2] += dt;
+            if (localQR[2] > 1000) localQR[0] = -999; // Se passa più di 1 secondo, cancella il target
 
-            if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999; //Kill expired QR
+            // 2. CALCOLO POTENZA FLYWHEEL E FILTRO HOOD (Dalla tua TeleOp)
+            double flyOutput = 0;
+            double targetHoodPos = 0.25;
 
-            if (lastKnownQR[0] != -999 && dpad_left) {
-                output = (lastKnownQR[1]/100)/7 + 0.375;
-
-                if (lastKnownQR[1] < 250) {
-                    hoodPos = .53;
-                    output+= 0.12;
+            if (localQR[0] != -999) {
+                // Calcolo dinamico basato sulla distanza
+                if (localQR[1] > 200) {
+                    flyOutput = (localQR[1] / 100) / 7 + POWER_Q;
+                    targetHoodPos = shootTime > 700 ? 0.52 : 0.60;
                 } else {
-                    hoodPos = .72;
-                    output+= 0.06;
+                    flyOutput = 0.55;
+                    targetHoodPos = shootTime > 300 ? 0.5 : 0.54;
                 }
-            }
-
-            //Autoaim at QR code
-            double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
-
-            if (Math.abs(qrOffset) > 10 && lastKnownQR[2] < 500) {
-                double trackSpeed = dpad_left ? Math.pow(qrOffset, 2)/(2*lastKnownQR[1]) * 0.01 : 0; //Get track speed with funciton V = x²/y * 0.1
-
-                if (Math.signum(qrOffset) == 1) {input = -Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));} //Get Tracking Direction and Normalize Raw Speed
-                else {input = Math.min(AUTOAIM_MAX_SPEED, Math.max(trackSpeed, AUTOAIM_MIN_SPEED));}
-
-                minTurretSpeed = AUTOAIM_MIN_SPEED;
+                if (shootTime > 700) flyOutput += 0.04;
             } else {
-                input = 0;
+                // Fallback di sicurezza se non vede il tag all'inizio: usa una potenza standard media
+                flyOutput = 0.55;
+                targetHoodPos = 0.54;
             }
 
-            ctx.gianluca.setPower(output * outputError);
-            ctx.outL.setPosition(hoodPos - hoodError); //left
-            ctx.outR.setPosition(1-(hoodPos - hoodError)); //right
+            // Imposta velocità ai Flywheels
+            double targetVelocity = flyOutput * 2500;
+            ctx.topFly.setVelocity(targetVelocity);
+            ctx.downFly.setVelocity(targetVelocity);
 
-            //Outtake Server Clock Handler
-            if (!cross) { //Reset
-                levettaWaiter = System.currentTimeMillis();
+            // Aggiorna posizione servi dell'Hood
+            ctx.rampL.setPosition(targetHoodPos);
+            ctx.coverR.setPosition(1 - targetHoodPos);
+
+            // 3. AUTOAIM DELLA TORRETTA (Dalla tua TeleOp)
+            if (localQR[0] != -999) {
+                double qrOffset = localQR[0] - (48 * Math.cos(Math.PI / 2 - Math.toRadians(localQR[3])) - CAMERA_OFFSET);
+                double distance = localQR[1];
+                double theta = Math.atan(qrOffset / distance);
+
+                currentTurretPos = (Math.toDegrees(theta) * 2.63 + 165) / 300;
+                currentTurretPos = Math.max(0.02, Math.min(0.98, currentTurretPos)); // Limiti di sicurezza
             }
 
-            if (cross && levettaBool == 0) { //Clock Init
-                ctx.in.setPower(1);
-                levettaTime = System.currentTimeMillis();
-                levettaBool = 1;
-            }
+            ctx.turretL.setPosition(currentTurretPos);
+            ctx.turretR.setPosition(currentTurretPos);
 
-            if (levettaBool > 0) { //Stages Cycle handler
-                ctx.in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
-                long dt = System.currentTimeMillis() - levettaTime;
-                NormalizedRGBA rgb = ctx.colore.getNormalizedColors();
+            // 4. LOGICA DI SPARO AUTOMATICO (Simula la pressione intelligente di X)
+            double currentVel = Math.abs(ctx.topFly.getVelocity());
+            // Il Flywheel è pronto se gira ad almeno la velocità target meno una tolleranza di 150 tick/sec
+            boolean flywheelReady = (targetVelocity > 100) && (currentVel >= (targetVelocity - 150));
 
-                telemetry.addData("rgb", rgb.blue);
-                telemetry.addData("dt", dt);
+            if (flywheelReady) {
+                // Se i motori sono pronti e stiamo tracciando, apriamo il BallStop e azioniamo l'intake
+                ctx.ballStop.setPosition(0);
 
-                if (dt < 500) { //Stage1: Push up to "ready" postition
-                    if (rgb.blue > 0.001) { //Activate only if a ball is detected
-                        ctx.levetta.setPosition(.61);
-                        levettaBool = 2;
-                    }
-                } else if (dt < 700) { //Stage2: SHOOT
-                    if (levettaBool == 2) ctx.levetta.setPosition(.75);
-                } else if (dt < 1500) { //Stage3: Retreat
-                    ctx.levetta.setPosition(0.43);
-                } else { //Stage4: Wait
-                    levettaBool = 0;
-                }
-
-                if (System.currentTimeMillis() - levettaWaiter > 800 && dt > 700) { //Intake Sync Handler
-                    ctx.in.setPower(1);
-                    hoodError = .05;
-                    outputError = 1.07;
+                if (shootTime > 200) {
+                    ctx.frontIn.setPower(0.4);
+                    ctx.inRoller.setPower(1.0);
                 } else {
-                    ctx.in.setPower(0);
+                    ctx.frontIn.setPower(0);
+                    ctx.inRoller.setPower(0);
                 }
-
-            } else { //Intake servo rest position
-                ctx.levetta.setPosition(0.43);
-                ctx.in.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+                shootTime += dt; // Incrementa il tempo di pressione virtuale di X
+            } else {
+                // Se i motori scendono di giri (es. quando passa la pallina), ferma momentaneamente l'intake per ricaricare
+                ctx.frontIn.setPower(0);
+                ctx.inRoller.setPower(0);
+                ctx.ballStop.setPosition(0.25);
+                // Non azzeriamo completamente shootTime se vuoi mantenere lo stadio dell'hood,
+                // oppure puoi fare shootTime = 0 se preferisci resettare il ciclo ad ogni colpo.
             }
 
-            //Turret Raw Position Handler
-            tRawPos += input * POWER_TO_TICKS * timer3.milliseconds();
-            turretLock[1] += input * POWER_TO_TICKS * timer3.milliseconds();
-
-            //Turret Handler
-            turretMovement(ctx.turetta, tRawPos, minTurretSpeed);
-
-            hoodError = hoodError - timer.milliseconds()/600*0.015 < 0 ? 0 : hoodError - timer.milliseconds()/600*0.015;
-            outputError = outputError - timer.milliseconds()/600*0.04 < 1 ? 1 : outputError - timer.milliseconds()/600*0.04;
-
+            // Telemetria di controllo per i test sul campo
+            telemetry.addData("=== AUTO SHOOT ===", "ATTIVO");
+            telemetry.addData("Tempo Mancante", "%.0f ms", durationMs - shootTimer.milliseconds());
+            telemetry.addData("Distanza Target", localQR[1]);
+            telemetry.addData("Flywheel Ready", flywheelReady);
+            telemetry.addData("Vel Target", targetVelocity);
+            telemetry.addData("Vel Attuale", currentVel);
             telemetry.update();
-            timer3.reset();
-        }
-        ctx.gianluca.setPower(0);
-    }
 
+            idle();
+        }
+
+        // 5. SPEGNIMENTO DI SICUREZZA (Fine dell'azione)
+        ctx.topFly.setVelocity(0);
+        ctx.downFly.setVelocity(0);
+        ctx.frontIn.setPower(0);
+        ctx.inRoller.setPower(0);
+        ctx.ballStop.setPosition(0.25);
+    }
 
 
 
@@ -486,7 +590,7 @@ public class auto extends LinearOpMode {
     }
 
     //Turret Handler
-    private boolean turretMovement(DcMotor turetta, double tRawPos, double minSpeed) {
+    /*private boolean turretMovement(DcMotor turetta, double tRawPos, double minSpeed) {
         double range = Math.abs(TURRET_MAX - TURRET_MIN); //Movement Range
 
         double tPos = ((tRawPos + Math.abs(TURRET_MIN))%range + range) % range - Math.abs(TURRET_MIN); //tPos Normalized Position
@@ -508,7 +612,7 @@ public class auto extends LinearOpMode {
             oTurret = c;
             return false;
         }
-    }
+    }*/
 
     //Threaded Odometry function
     private void odometry(ctx ctx) {
@@ -555,7 +659,7 @@ public class auto extends LinearOpMode {
     }
 
     //Turret Starting Alignment ( homing )
-    private void turretHoming(TouchSensor toccami, DcMotor turetta) {
+   /* private void turretHoming(TouchSensor toccami, DcMotor turetta) {
 
         //Move until u know where u are
         while (!isStopRequested() && !toccami.isPressed()) {
@@ -576,7 +680,7 @@ public class auto extends LinearOpMode {
             idle();
         }
         turetta.setPower(0);
-    }
+    }*/
 
     //Manual Exposure camera settings
     private void setManualExposure(VisionPortal visionPortal, int exposureMS, int gain) {
@@ -613,53 +717,39 @@ public class auto extends LinearOpMode {
 
     //Robot Hardware context class
     static class ctx {
-        public final DcMotor lFd; //Left Front Drive
-        public final DcMotor lBd; //Left Back Drive
-        public final DcMotor rFd; //Right Front Drive
-        public final DcMotor rBd; //Right back Drive
-        public final DcMotor odoParallel; //Parallel Odometry
-        public final DcMotor odoPerp; //Perpendicular Odometry
-        public final DcMotor gianluca;
-        public final DcMotor in;
-        public final DcMotor turetta;
-        public final Servo outL;
-        public final Servo outR;
-        public final Servo levetta;
-        public final IMU imu; //Inertial Mesurement Unit
+        public final DcMotor lFd;
+        public final DcMotor lBd;
+        public final DcMotor rFd;
+        public final DcMotor rBd;
+        public final DcMotor odoParallel;
+        public final DcMotor odoPerp;
+        public final IMU imu;
+        public final DcMotorEx topFly, downFly;
+        public final DcMotor frontIn, inRoller;
+        public final Servo turretL, turretR, ballStop, rampL, coverR;
         public final AprilTagProcessor tagProcessor;
-        public final NormalizedColorSensor colore;
 
-        public ctx(DcMotor lFd,
-                   DcMotor lBd,
-                   DcMotor rFd,
-                   DcMotor rBd,
-                   DcMotor odoParallel,
-                   DcMotor odoPerp,
-                   DcMotor gianluca,
-                   DcMotor in,
-                   DcMotor turetta,
-                   Servo outL,
-                   Servo outR,
-                   Servo levetta,
-                   IMU imu,
-                   AprilTagProcessor tagProcessor,
-                   NormalizedColorSensor colore
-        ) {
+        public ctx(DcMotor lFd, DcMotor lBd, DcMotor rFd, DcMotor rBd, DcMotor odoParallel, DcMotor odoPerp, IMU imu,
+                   DcMotorEx topFly, DcMotorEx downFly, DcMotor frontIn, DcMotor inRoller,
+                   Servo turretL, Servo turretR, Servo ballStop, Servo rampL, Servo coverR,
+                   AprilTagProcessor tagProcessor) {
             this.lFd = lFd;
             this.lBd = lBd;
             this.rFd = rFd;
             this.rBd = rBd;
             this.odoParallel = odoParallel;
             this.odoPerp = odoPerp;
-            this.gianluca = gianluca;
-            this.in = in;
-            this.turetta = turetta;
-            this.outL = outL;
-            this.outR = outR;
-            this.levetta = levetta;
             this.imu = imu;
+            this.topFly = topFly;
+            this.downFly = downFly;
+            this.frontIn = frontIn;
+            this.inRoller = inRoller;
+            this.turretL = turretL;
+            this.turretR = turretR;
+            this.ballStop = ballStop;
+            this.rampL = rampL;
+            this.coverR = coverR;
             this.tagProcessor = tagProcessor;
-            this.colore = colore;
         }
     }
 }

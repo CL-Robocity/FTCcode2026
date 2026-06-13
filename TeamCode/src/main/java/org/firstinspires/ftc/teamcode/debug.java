@@ -37,7 +37,9 @@ public class debug extends LinearOpMode {
     final double[] pos = {0, 0, 0, 0};
     double hoodPos = .25;
     double shootTime = 0;
-    double POWER_Q = .27;
+    double POWER_Q = .25;
+    boolean lastDpadUp2 = false;
+    boolean lastDpadDown2 = false;
     double oParallel = 0, oPerp = 0, oHeading = 0;
     double speed = SPEED;
     double[] lastKnownQR = {-999, -999, 0, 0};
@@ -198,6 +200,28 @@ public class debug extends LinearOpMode {
             ctx.rFd.setPower(MotArr[2] * speed);
             ctx.rBd.setPower(MotArr[3] * speed);
 
+
+
+
+            // Alzi la potenza della flywheel con la freccetta IN SU
+            if (gamepad2.dpad_right && !lastDpadUp2) {
+                POWER_Q += 0.02;
+                if (POWER_Q > 1.0) {
+                    POWER_Q = 1.0; // Limite massimo di sicurezza per i motori
+                }
+            }
+            lastDpadUp2 = gamepad2.dpad_right; // Memorizza lo stato corrente per il prossimo ciclo
+
+
+            // Abbassi la potenza della flywheel con la freccetta IN GIÙ ---
+            if (gamepad2.dpad_left && !lastDpadDown2) {
+                POWER_Q -= 0.02;
+                if (POWER_Q < 0.0) {
+                    POWER_Q = 0.0; // Evita che vada in negativo
+                }
+            }
+            lastDpadDown2 = gamepad2.dpad_left; // Memorizza lo stato
+
             // detect qr code
             if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) { //se ha detectato qualcosa e triangolo premuto
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
@@ -219,9 +243,9 @@ public class debug extends LinearOpMode {
             if (lastKnownQR[0] != -999 && gamepad2.triangle) {
                 if (lastKnownQR[1] > 200) {
                     output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
-                    hoodPos = shootTime > 700 ? 0.52 : 0.60; // dopo : prima
+                    hoodPos = shootTime > 700 ? 0.50 : 0.58; // dopo : prima
                 } else {
-                    output = 0.55;
+                    output = 0.3 + POWER_Q;
                     hoodPos = shootTime > 300 ? 0.5 : 0.54; // dopo : prima
                 }
                 if (shootTime > 700) output += 0.04;
@@ -229,8 +253,8 @@ public class debug extends LinearOpMode {
 
             // se non stai premendo triangolo va in base al R2
              if (!gamepad2.triangle) {
-               //output = Math.max(gamepad2.right_trigger, 0.5);
-                 output = gamepad2.right_trigger;
+               output = Math.max(gamepad2.right_trigger, 0.5);
+
             }
 
             double targetVelocity = output * 2500;
@@ -238,7 +262,7 @@ public class debug extends LinearOpMode {
             DownFlyWheel.setVelocity(targetVelocity);
 
             // set potenza dell'intake bilaterale per entrambi i pad
-            double intake = gamepad1.right_trigger > gamepad2.left_trigger ? Math.min(1, gamepad1.right_trigger) : Math.min(1, gamepad2.left_trigger);
+            double intake = gamepad1.right_trigger > gamepad2.left_trigger ? Math.min(1, gamepad1.right_trigger + 0.1) : Math.min(1, gamepad2.left_trigger + 0.1);
 
             // se non stai premendo la croce --> servo di stop non completamente fuori
             if (!gamepad2.cross) {
@@ -312,6 +336,9 @@ public class debug extends LinearOpMode {
             telemetry.addData("\n ODO PARALLEL --> ", odoParallel.getCurrentPosition());
             telemetry.addData("ODO PERP --> ", odoPerp.getCurrentPosition());
 
+            telemetry.addData("\n Fly Wheel Power : ", POWER_Q);
+
+            telemetry.addData("\n Pointing deg : ", Math.toDegrees(Math.atan2(-gamepad1.left_stick_y,gamepad1.left_stick_x)));
             telemetry.update();
 
             idle();
