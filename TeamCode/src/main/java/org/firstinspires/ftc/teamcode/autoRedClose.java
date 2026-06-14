@@ -31,8 +31,8 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-@Autonomous(name="AutoFrameWork", group="Main")
-public class auto extends LinearOpMode {
+@Autonomous(name="Red Close__Auto", group="Main")
+public class autoRedClose extends LinearOpMode {
 
     //timer obj
     ElapsedTime timer = new ElapsedTime();
@@ -189,11 +189,19 @@ public class auto extends LinearOpMode {
         telemetry.update();
 
         waitForStart();
-        straight(ctx, 100, 90, 0.5, false, true);
-        sleep(1000);
-        align(ctx, 90, 0.3, false);
-        sleep(1000);
-        straight(ctx, 100, 45, 0.5, true, false);
+
+        RightTurretServo.setPosition(0.5);
+        LeftTurretServo.setPosition(0.5);
+
+
+        sleep(500);
+        straight(ctx, 130, 180, 0.4, true , false);
+        autoShoot(ctx,4000);
+        sleep(500);
+        align(ctx, -30, 0.3, false);
+        sleep(200);
+        straight(ctx, 30, -90, 0.2, false, false);
+
 
 
         timer.reset();
@@ -307,9 +315,6 @@ public class auto extends LinearOpMode {
         ctx.inRoller.setPower(0);
         ctx.frontIn.setPower(0);
 
-        // deact della flywheel
-        ctx.topFly.setVelocity(0);
-        ctx.downFly.setVelocity(0);
     }
 
     /**
@@ -389,82 +394,95 @@ public class auto extends LinearOpMode {
     }
 
     /**
-     * Esegue il puntamento automatico tramite AprilTag (ID 24) e spara.
+     * Riproduce fedelmente il comportamento della TeleOp:
+     * - Primi 500ms: aggancia il tag, muove la torretta e l'hood, accelera i volani (Simula TRIANGOLO).
+     * - Successivamente: apre il ballstop e avvia i motori di carico con 200ms di ritardo (Simula TRIANGOLO + X).
      */
     private void autoShoot(ctx ctx, double durationMs) {
-        ElapsedTime shootTimer = new ElapsedTime();
-        ElapsedTime loopTimer = new ElapsedTime();
+        ElapsedTime shootTimer = new ElapsedTime(); // Timer totale del metodo
+        ElapsedTime loopTimer = new ElapsedTime();  // Timer per calcolare il delta time (dt)
 
+        // Variabili di stato locali identiche alla TeleOp
         double shootTime = 0;
-        double currentTurretPos = 0.55;
-
-        double[] localQR = {-999, -999, 0, 0};
-        double POWER_Q = 0.27;
-        double CAMERA_OFFSET = 0;
+        double output = 0;
+        double hoodPos = 0.25;
 
         shootTimer.reset();
         loopTimer.reset();
 
         while (opModeIsActive() && shootTimer.milliseconds() < durationMs) {
+            // Calcola il tempo trascorso dall'ultimo ciclo (dt) per simulare il timer della TeleOp
             double dt = loopTimer.milliseconds();
             loopTimer.reset();
 
+            odometry(ctx);
+
+            // 1. RILEVAMENTO APRILTAG (Esattamente come dentro "if (gamepad2.triangle)")
             if (!ctx.tagProcessor.getDetections().isEmpty()) {
                 List<AprilTagDetection> tags = ctx.tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
                     if (tag.metadata != null && tag.metadata.id == 24) {
-                        localQR[0] = tag.ftcPose.x;
-                        localQR[1] = tag.ftcPose.y;
-                        localQR[2] = 0;
-                        localQR[3] = tag.ftcPose.yaw;
+                        lastKnownQR[0] = tag.ftcPose.x;
+                        lastKnownQR[1] = tag.ftcPose.y;
+                        lastKnownQR[2] = 0;
+                        lastKnownQR[3] = tag.ftcPose.yaw;
                     }
                 }
             }
 
-            localQR[2] += dt;
-            if (localQR[2] > 1000) localQR[0] = -999;
+            // Aggiorna il ciclo di vita del target QR
+            lastKnownQR[2] += dt;
+            if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999;
 
-            double flyOutput = 0;
-            double targetHoodPos = 0.25;
-
-            if (localQR[0] != -999) {
-                if (localQR[1] > 200) {
-                    flyOutput = (localQR[1] / 100) / 7 + POWER_Q;
-                    targetHoodPos = shootTime > 700 ? 0.52 : 0.60;
+            // 2. CALCOLO POTENZA FLYWHEEL E POSIZIONE HOOD
+            if (lastKnownQR[0] != -999) {
+                if (lastKnownQR[1] > 200) {
+                    output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
+                    hoodPos = shootTime > 700 ? 0.50 : 0.58;
                 } else {
-                    flyOutput = 0.55;
-                    targetHoodPos = shootTime > 300 ? 0.5 : 0.54;
+                    output = 0.3 + POWER_Q;
+                    hoodPos = shootTime > 700 ? 0.50 : 0.56;
                 }
-                if (shootTime > 700) flyOutput += 0.04;
+                if (shootTime > 700) output += 0.04;
             } else {
-                flyOutput = 0.55;
-                targetHoodPos = 0.54;
+                // Fallback di sicurezza se non vede il tag all'inizio
+                output = 0.3 + POWER_Q;
             }
 
-            double targetVelocity = flyOutput * 2500;
+            double targetVelocity = output * 2500;
             ctx.topFly.setVelocity(targetVelocity);
             ctx.downFly.setVelocity(targetVelocity);
 
-            ctx.rampL.setPosition(targetHoodPos);
-            ctx.coverR.setPosition(1 - targetHoodPos);
+            // 3. AUTO-AIM DELLA TORRETTA
+            if (lastKnownQR[0] != -999) {
+                double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
+                double distance = lastKnownQR[1];
 
-            if (localQR[0] != -999) {
-                double qrOffset = localQR[0] - (48 * Math.cos(Math.PI / 2 - Math.toRadians(localQR[3])) - CAMERA_OFFSET);
-                double distance = localQR[1];
                 double theta = Math.atan(qrOffset / distance);
-
-                currentTurretPos = (Math.toDegrees(theta) * 2.63 + 165) / 300;
-                currentTurretPos = Math.max(0.02, Math.min(0.98, currentTurretPos));
+                TurretPosition = (Math.toDegrees(theta) * 2.63 + 165) / 300;
             }
 
-            ctx.turretL.setPosition(currentTurretPos);
-            ctx.turretR.setPosition(currentTurretPos);
+            // Limiti fisici torretta
+            TurretPosition = Math.max(0.02, Math.min(0.98, TurretPosition));
+            ctx.turretL.setPosition(TurretPosition);
+            ctx.turretR.setPosition(TurretPosition);
 
-            double currentVel = Math.abs(ctx.topFly.getVelocity());
-            boolean flywheelReady = (targetVelocity > 100) && (currentVel >= (targetVelocity - 150));
+            // Aggiorna i servomotori dell'hood
+            ctx.rampL.setPosition(hoodPos);
+            ctx.coverR.setPosition(1 - hoodPos);
 
-            if (flywheelReady) {
-                ctx.ballStop.setPosition(0);
+            // 4. TIMING DI SPARO (La tua sequenza temporale)
+            if (shootTimer.milliseconds() < 500) {
+                // FASE A: Primi 500ms -> Solo mira e calcolo (Triangolo ON, X OFF)
+                ctx.frontIn.setPower(0);
+                ctx.inRoller.setPower(0);
+                ctx.ballStop.setPosition(0.25); // Cancello chiuso
+                shootTime = 0;
+            } else {
+                // FASE B: Dopo 500ms -> Inizia la sequenza di fuoco (Triangolo ON + X ON)
+                ctx.ballStop.setPosition(0); // Il cursore si apre e RESTA aperto
+
+                // Gestione del ritardo dei 200ms per i motori di carico copiato dalla TeleOp
                 if (shootTime > 200) {
                     ctx.frontIn.setPower(0.4);
                     ctx.inRoller.setPower(1.0);
@@ -472,26 +490,27 @@ public class auto extends LinearOpMode {
                     ctx.frontIn.setPower(0);
                     ctx.inRoller.setPower(0);
                 }
-                shootTime += dt;
-            } else {
-                ctx.frontIn.setPower(0);
-                ctx.inRoller.setPower(0);
-                ctx.ballStop.setPosition(0.25);
+                shootTime += dt; // Incrementa il tempo di sparo attivo (fondamentale per le soglie >200 e >700)
             }
 
-            telemetry.addData("=== AUTO SHOOT ===", "ATTIVO");
-            telemetry.addData("Tempo Mancante", "%.0f ms", durationMs - shootTimer.milliseconds());
-            telemetry.addData("Distanza Target", localQR[1]);
+            // Telemetria di controllo in tempo reale
+            telemetry.addData("=== AUTO SHOOT ===", "REPLICA TELEOP");
+            telemetry.addData("Stato Pulsanti", shootTimer.milliseconds() < 500 ? "[Δ]" : "[Δ + X]");
+            telemetry.addData("ShootTime Attivo (ms)", "%.0f", shootTime);
+            telemetry.addData("Distanza Target", lastKnownQR[1]);
+            telemetry.addData("Velocità Volano", "Target: %.0f | Real: %.0f", targetVelocity, Math.abs(ctx.topFly.getVelocity()));
+            telemetry.addData("Inclinazione Hood", hoodPos);
             telemetry.update();
 
             idle();
         }
 
+        // Spegnimento totale al termine del tempo impostato nell'autonoma
         ctx.topFly.setVelocity(0);
         ctx.downFly.setVelocity(0);
         ctx.frontIn.setPower(0);
         ctx.inRoller.setPower(0);
-        ctx.ballStop.setPosition(0.25);
+        ctx.ballStop.setPosition(0.25); // Richiudi il cancello per la fase successiva
     }
 
     //Mecanum Drive
