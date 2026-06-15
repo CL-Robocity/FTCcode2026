@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode;
 import android.util.Size;
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -20,7 +21,7 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagLibrary;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
-
+@Disabled
 @TeleOp(name="MainTest", group="Main")
 public class debug extends LinearOpMode {
 
@@ -37,7 +38,7 @@ public class debug extends LinearOpMode {
     final double[] pos = {0, 0, 0, 0};
     double hoodPos = .25;
     double shootTime = 0;
-    double POWER_Q = .28;
+    double POWER_Q = .25;
     boolean lastDpadUp2 = false;
     boolean lastDpadDown2 = false;
     double oParallel = 0, oPerp = 0, oHeading = 0;
@@ -253,7 +254,7 @@ public class debug extends LinearOpMode {
 
             // se non stai premendo triangolo va in base al R2
              if (!gamepad2.triangle) {
-               output = Math.max(gamepad2.right_trigger, 0.2);
+               output = Math.max(gamepad2.right_trigger, 0.4);
 
             }
 

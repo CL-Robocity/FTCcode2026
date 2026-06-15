@@ -31,7 +31,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-@Autonomous(name="Red Close__Auto", group="Main")
+@Autonomous(name="Red Close Auto", group="Main")
 public class autoRedClose extends LinearOpMode {
 
     //timer obj
@@ -195,13 +195,40 @@ public class autoRedClose extends LinearOpMode {
 
 
         sleep(500);
-        straight(ctx, 130, 180, 0.4, true , false);
-        autoShoot(ctx,4000);
-        sleep(500);
-        align(ctx, -30, 0.3, false);
-        sleep(200);
-        straight(ctx, 30, -90, 0.2, false, false);
+        straight(ctx, 100, 180, 0.4, true , false); // uscita dalla base
+        autoShoot(ctx,2500); // primo sparo
 
+        sleep(200);
+
+        align(ctx, -35, 0.3, false);// allinarsi in orizzontale
+
+        sleep(200);
+
+        straight(ctx, 20, 90, 0.3, false, false);
+        straight(ctx, 80, 0, 0.4, false, true); // prendere le palline
+
+        sleep(500);
+
+        align(ctx,-43,0.3, false);// riallineati per tornare in base
+        straight(ctx, 70, 180, 0.4, false, false);// indietro
+
+        sleep(200);
+        align(ctx, 0, 0.4, true);// allineati per sparare
+        autoShoot(ctx,2500); // secondo sparo
+
+        align(ctx,-33, 0.3, false); // allineati per prendere le seconde palline
+        sleep(200);
+
+        straight(ctx, 55, 90, 0.3, false, false);// correzzione distanza
+        straight(ctx, 70,0,0.4,false, true); // prendi le seconde palline
+
+        sleep(200);
+
+        straight(ctx,50, 180, 0.4, false, false);// torna indietro
+        straight(ctx,30, -90, 0.5, false, false);
+        align(ctx, 0, 0.5, true);
+        autoShoot(ctx, 2500);
+        straight(ctx, 60, 90, 0.5, false, false);
 
 
         timer.reset();
