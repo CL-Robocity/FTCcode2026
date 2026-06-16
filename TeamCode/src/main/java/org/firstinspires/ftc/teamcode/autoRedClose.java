@@ -195,7 +195,7 @@ public class autoRedClose extends LinearOpMode {
 
 
         sleep(500);
-        straight(ctx, 100, 180, 0.4, true , false); // uscita dalla base
+        straight(ctx, 90, 180, 0.4, true , false); // uscita dalla base
         autoShoot(ctx,2500); // primo sparo
 
         sleep(200);
@@ -204,8 +204,8 @@ public class autoRedClose extends LinearOpMode {
 
         sleep(200);
 
-        straight(ctx, 25, 90, 0.3, false, false);
-        straight(ctx, 95, 0, 0.4, false, true); // prendere le palline
+        straight(ctx, 33, 90, 0.3, false, false);
+        straight(ctx, 85, 0, 0.4, false, true); // prendere le palline
 
         sleep(500);
 
@@ -219,13 +219,13 @@ public class autoRedClose extends LinearOpMode {
         align(ctx,-33, 0.3, false); // allineati per prendere le seconde palline
         sleep(200);
 
-        straight(ctx, 60, 90, 0.3, false, false);// correzzione distanza
-        straight(ctx, 90,0,0.4,false, true); // prendi le seconde palline
+        straight(ctx, 63, 90, 0.3, false, false);// correzzione distanza
+        straight(ctx, 80,0,0.4,false, true); // prendi le seconde palline
 
         sleep(200);
 
-        straight(ctx,75, 180, 0.4, false, true);// torna indietro
-        straight(ctx,50, -90, 0.5, false, false);
+        straight(ctx,70, 180, 0.4, false, false);// torna indietro
+        straight(ctx,60, -90, 0.5, false, false);
         align(ctx, 10, 0.5, true);
         autoShoot(ctx, 2500);
         straight(ctx, 60, 90, 0.5, false, false);
@@ -462,7 +462,6 @@ public class autoRedClose extends LinearOpMode {
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999;
 
             // 2. CALCOLO POTENZA FLYWHEEL E POSIZIONE HOOD
-
             if (lastKnownQR[1] > 200) {
                 output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
                 hoodPos = shootTime > 700 ? 0.54 : 0.60;

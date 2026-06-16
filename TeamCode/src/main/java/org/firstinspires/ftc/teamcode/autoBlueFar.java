@@ -435,7 +435,7 @@ public class autoBlueFar extends LinearOpMode {
             if (!ctx.tagProcessor.getDetections().isEmpty()) {
                 List<AprilTagDetection> tags = ctx.tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
-                    if (tag.metadata != null && tag.metadata.id == 24) {
+                    if (tag.metadata != null && tag.metadata.id == 20) {
                         lastKnownQR[0] = tag.ftcPose.x;
                         lastKnownQR[1] = tag.ftcPose.y;
                         lastKnownQR[2] = 0;
