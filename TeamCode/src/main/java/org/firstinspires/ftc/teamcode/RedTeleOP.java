@@ -246,14 +246,14 @@ public class RedTeleOP extends LinearOpMode {
                     hoodPos = shootTime > 700 ? 0.50 : 0.58; // dopo : prima
                 } else {
                     output = 0.3 + POWER_Q;
-                    hoodPos = shootTime > 700? 0.50: 0.56; // dopo : prima
+                    hoodPos = shootTime > 700? 0.50: 0.52; // dopo : prima
                 }
                 if (shootTime > 700) output += 0.04;
             }
 
             // se non stai premendo triangolo va in base al R2
             if (!gamepad2.triangle) {
-                output = Math.max(gamepad2.right_trigger, 0.4);
+                output = Math.max(gamepad2.right_trigger, 0);
 
             }
 
@@ -284,6 +284,8 @@ public class RedTeleOP extends LinearOpMode {
                 BallStopServo.setPosition(0);
                 shootTime += timer.milliseconds();
             }
+
+            if(gamepad2.left_stick_button) BallStopServo.setPosition(0.25);
 
             // set posizione servo hood
             if ((gamepad2.dpad_down && hoodPos > 0) && !gamepad2.triangle) {

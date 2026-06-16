@@ -201,6 +201,15 @@ public class movement_testi extends LinearOpMode {
             ctx.rBd.setPower(MotArr[3] * speed);
 
 
+            if(gamepad1.right_bumper){
+                IntakeRoller.setPower(1);
+                FrontIntake.setPower(.8);
+
+            }else{
+                IntakeRoller.setPower(0);
+                FrontIntake.setPower(0);
+            }
+
 
 
 

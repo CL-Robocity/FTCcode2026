@@ -31,7 +31,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-@Autonomous(name="Red Close Auto", group="Main")
+@Autonomous(name="RED Close Auto", group="Main")
 public class autoRedClose extends LinearOpMode {
 
     //timer obj
@@ -204,13 +204,13 @@ public class autoRedClose extends LinearOpMode {
 
         sleep(200);
 
-        straight(ctx, 20, 90, 0.3, false, false);
-        straight(ctx, 80, 0, 0.4, false, true); // prendere le palline
+        straight(ctx, 25, 90, 0.3, false, false);
+        straight(ctx, 95, 0, 0.4, false, true); // prendere le palline
 
         sleep(500);
 
         align(ctx,-43,0.3, false);// riallineati per tornare in base
-        straight(ctx, 70, 180, 0.4, false, false);// indietro
+        straight(ctx, 80, 180, 0.4, false, true);// indietro
 
         sleep(200);
         align(ctx, 0, 0.4, true);// allineati per sparare
@@ -219,14 +219,14 @@ public class autoRedClose extends LinearOpMode {
         align(ctx,-33, 0.3, false); // allineati per prendere le seconde palline
         sleep(200);
 
-        straight(ctx, 55, 90, 0.3, false, false);// correzzione distanza
-        straight(ctx, 70,0,0.4,false, true); // prendi le seconde palline
+        straight(ctx, 60, 90, 0.3, false, false);// correzzione distanza
+        straight(ctx, 90,0,0.4,false, true); // prendi le seconde palline
 
         sleep(200);
 
-        straight(ctx,50, 180, 0.4, false, false);// torna indietro
-        straight(ctx,30, -90, 0.5, false, false);
-        align(ctx, 0, 0.5, true);
+        straight(ctx,75, 180, 0.4, false, true);// torna indietro
+        straight(ctx,50, -90, 0.5, false, false);
+        align(ctx, 10, 0.5, true);
         autoShoot(ctx, 2500);
         straight(ctx, 60, 90, 0.5, false, false);
 
@@ -361,7 +361,7 @@ public class autoRedClose extends LinearOpMode {
 
             // flywheel activation
             if (flywheel) {
-                double baseVelocity = 0.45 * 2500;
+                double baseVelocity = 0.55 * 2500;
                 ctx.topFly.setVelocity(baseVelocity);
                 ctx.downFly.setVelocity(baseVelocity);
             } else {
@@ -462,19 +462,15 @@ public class autoRedClose extends LinearOpMode {
             if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999;
 
             // 2. CALCOLO POTENZA FLYWHEEL E POSIZIONE HOOD
-            if (lastKnownQR[0] != -999) {
-                if (lastKnownQR[1] > 200) {
-                    output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
-                    hoodPos = shootTime > 700 ? 0.50 : 0.58;
-                } else {
-                    output = 0.3 + POWER_Q;
-                    hoodPos = shootTime > 700 ? 0.50 : 0.56;
-                }
-                if (shootTime > 700) output += 0.04;
+
+            if (lastKnownQR[1] > 200) {
+                output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
+                hoodPos = shootTime > 700 ? 0.54 : 0.60;
             } else {
-                // Fallback di sicurezza se non vede il tag all'inizio
                 output = 0.3 + POWER_Q;
+                hoodPos = shootTime > 700 ? 0.54 : 0.60;
             }
+            if (shootTime > 700) output += 0.04;
 
             double targetVelocity = output * 2500;
             ctx.topFly.setVelocity(targetVelocity);
@@ -487,12 +483,15 @@ public class autoRedClose extends LinearOpMode {
 
                 double theta = Math.atan(qrOffset / distance);
                 TurretPosition = (Math.toDegrees(theta) * 2.63 + 165) / 300;
-            }
 
+
+            }
             // Limiti fisici torretta
             TurretPosition = Math.max(0.02, Math.min(0.98, TurretPosition));
             ctx.turretL.setPosition(TurretPosition);
             ctx.turretR.setPosition(TurretPosition);
+
+
 
             // Aggiorna i servomotori dell'hood
             ctx.rampL.setPosition(hoodPos);
