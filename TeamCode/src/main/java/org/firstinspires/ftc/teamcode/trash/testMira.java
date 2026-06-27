@@ -1,22 +1,18 @@
-package org.firstinspires.ftc.teamcode;
+package org.firstinspires.ftc.teamcode.trash;
 
 import android.util.Size;
 
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
-import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
-import com.qualcomm.robotcore.hardware.NormalizedRGBA;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
@@ -31,8 +27,9 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-@Autonomous(name="AutoFrameWork", group="Main")
-public class auto extends LinearOpMode {
+
+@Autonomous(name="testmira", group="Main")
+public class testMira extends LinearOpMode {
 
     //timer obj
     ElapsedTime timer = new ElapsedTime();
@@ -55,7 +52,7 @@ public class auto extends LinearOpMode {
     double oParallel = 0, oPerp = 0, oHeading = 0;
     double speed = SPEED;
     double[] lastKnownQR = {-999, -999, 0, 0};
-    double TurretPosition = 0.55;
+    double TurretPosition = 0.5;
     double TURRET_KP = 0.002;
     double output = 0;
 
@@ -189,12 +186,13 @@ public class auto extends LinearOpMode {
         telemetry.update();
 
         waitForStart();
-        straight(ctx, 100, 90, 0.5, false, true);
-        sleep(1000);
-        align(ctx, 90, 0.3, false);
-        sleep(1000);
-        straight(ctx, 100, 45, 0.5, true, false);
 
+        RightTurretServo.setPosition(0.5);
+        LeftTurretServo.setPosition(0.5);
+
+
+        sleep(500);
+        autoShoot(ctx, 2500);
 
         timer.reset();
 
@@ -307,9 +305,6 @@ public class auto extends LinearOpMode {
         ctx.inRoller.setPower(0);
         ctx.frontIn.setPower(0);
 
-        // deact della flywheel
-        ctx.topFly.setVelocity(0);
-        ctx.downFly.setVelocity(0);
     }
 
     /**
@@ -329,7 +324,7 @@ public class auto extends LinearOpMode {
 
             // flywheel activation
             if (flywheel) {
-                double baseVelocity = 0.45 * 2500;
+                double baseVelocity = 0.55 * 2500;
                 ctx.topFly.setVelocity(baseVelocity);
                 ctx.downFly.setVelocity(baseVelocity);
             } else {
@@ -389,18 +384,19 @@ public class auto extends LinearOpMode {
     }
 
     /**
-     * Esegue il puntamento automatico tramite AprilTag (ID 24) e spara.
+     * Riproduce fedelmente il comportamento della TeleOp:
+     * - Primi 500ms: aggancia il tag, muove la torretta e l'hood, accelera i volani (Simula TRIANGOLO).
+     * - Successivamente: apre il ballstop e avvia i motori di carico con 200ms di ritardo (Simula TRIANGOLO + X).
      */
     private void autoShoot(ctx ctx, double durationMs) {
         ElapsedTime shootTimer = new ElapsedTime();
         ElapsedTime loopTimer = new ElapsedTime();
 
-        double shootTime = 0;
-        double currentTurretPos = 0.55;
+        double RED_OFFSET = 0.1;
 
-        double[] localQR = {-999, -999, 0, 0};
-        double POWER_Q = 0.27;
-        double CAMERA_OFFSET = 0;
+        double shootTime = 0;
+        double output = 0;
+        double hoodPos = 0.25;
 
         shootTimer.reset();
         loopTimer.reset();
@@ -409,62 +405,71 @@ public class auto extends LinearOpMode {
             double dt = loopTimer.milliseconds();
             loopTimer.reset();
 
+            odometry(ctx);
+
+            // 1. RILEVAMENTO APRILTAG (DIRETTO SENZA METADATA LOCK)
             if (!ctx.tagProcessor.getDetections().isEmpty()) {
                 List<AprilTagDetection> tags = ctx.tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
-                    if (tag.metadata != null && tag.metadata.id == 24) {
-                        localQR[0] = tag.ftcPose.x;
-                        localQR[1] = tag.ftcPose.y;
-                        localQR[2] = 0;
-                        localQR[3] = tag.ftcPose.yaw;
+                    // FIX 1: Usiamo tag.id nativo. Identifica il tag 20 del blu all'istante!
+                    if (tag != null && tag.id == 20) {
+                        lastKnownQR[0] = tag.ftcPose.x;
+                        lastKnownQR[1] = tag.ftcPose.y;
+                        lastKnownQR[2] = 0; // Resetta il timer di scadenza
+                        lastKnownQR[3] = tag.ftcPose.yaw;
                     }
                 }
             }
 
-            localQR[2] += dt;
-            if (localQR[2] > 1000) localQR[0] = -999;
+            // Aggiorna il ciclo di vita del target QR
+            lastKnownQR[2] += dt;
+            if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999;
 
-            double flyOutput = 0;
-            double targetHoodPos = 0.25;
-
-            if (localQR[0] != -999) {
-                if (localQR[1] > 200) {
-                    flyOutput = (localQR[1] / 100) / 7 + POWER_Q;
-                    targetHoodPos = shootTime > 700 ? 0.52 : 0.60;
-                } else {
-                    flyOutput = 0.55;
-                    targetHoodPos = shootTime > 300 ? 0.5 : 0.54;
-                }
-                if (shootTime > 700) flyOutput += 0.04;
+            // 2. CALCOLO POTENZA FLYWHEEL E POSIZIONE HOOD
+            if (lastKnownQR[0] != -999 && lastKnownQR[1] > 200) {
+                output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
+                hoodPos = shootTime > 700 ? 0.54 : 0.60;
             } else {
-                flyOutput = 0.55;
-                targetHoodPos = 0.54;
+                output = 0.3 + POWER_Q;
+                hoodPos = shootTime > 700 ? 0.54 : 0.60;
             }
+            if (shootTime > 700) output += 0.04;
 
-            double targetVelocity = flyOutput * 2500;
+            double targetVelocity = output * 2500;
             ctx.topFly.setVelocity(targetVelocity);
             ctx.downFly.setVelocity(targetVelocity);
 
-            ctx.rampL.setPosition(targetHoodPos);
-            ctx.coverR.setPosition(1 - targetHoodPos);
+            // 3. AUTO-AIM DELLA TORRETTA (PROTETTO)
+            if (lastKnownQR[0] != -999) {
+                double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
+                double distance = lastKnownQR[1];
 
-            if (localQR[0] != -999) {
-                double qrOffset = localQR[0] - (48 * Math.cos(Math.PI / 2 - Math.toRadians(localQR[3])) - CAMERA_OFFSET);
-                double distance = localQR[1];
                 double theta = Math.atan(qrOffset / distance);
+                TurretPosition = (Math.toDegrees(theta) * 2.63 + 165) / 300 - RED_OFFSET;
 
-                currentTurretPos = (Math.toDegrees(theta) * 2.63 + 165) / 300;
-                currentTurretPos = Math.max(0.02, Math.min(0.98, currentTurretPos));
+                // FIX 2: Muovi i servo sulla posizione calcolata SOLO se il target è agganciato
+                TurretPosition = Math.max(0.02, Math.min(0.98, TurretPosition));
+                ctx.turretL.setPosition(TurretPosition);
+                ctx.turretR.setPosition(TurretPosition);
+            } else {
+                // FALLBACK: Se non vede il tag (o lo perde), resta perfettamente dritta al centro
+                ctx.turretL.setPosition(0.5);
+                ctx.turretR.setPosition(0.5);
             }
 
-            ctx.turretL.setPosition(currentTurretPos);
-            ctx.turretR.setPosition(currentTurretPos);
+            // Aggiorna i servomotori dell'hood
+            ctx.rampL.setPosition(hoodPos);
+            ctx.coverR.setPosition(1 - hoodPos);
 
-            double currentVel = Math.abs(ctx.topFly.getVelocity());
-            boolean flywheelReady = (targetVelocity > 100) && (currentVel >= (targetVelocity - 150));
-
-            if (flywheelReady) {
+            // 4. TIMING DI SPARO
+            if (shootTimer.milliseconds() < 500) {
+                ctx.frontIn.setPower(0);
+                ctx.inRoller.setPower(0);
+                ctx.ballStop.setPosition(0.25);
+                shootTime = 0;
+            } else {
                 ctx.ballStop.setPosition(0);
+
                 if (shootTime > 200) {
                     ctx.frontIn.setPower(0.4);
                     ctx.inRoller.setPower(1.0);
@@ -473,20 +478,20 @@ public class auto extends LinearOpMode {
                     ctx.inRoller.setPower(0);
                 }
                 shootTime += dt;
-            } else {
-                ctx.frontIn.setPower(0);
-                ctx.inRoller.setPower(0);
-                ctx.ballStop.setPosition(0.25);
             }
 
-            telemetry.addData("=== AUTO SHOOT ===", "ATTIVO");
-            telemetry.addData("Tempo Mancante", "%.0f ms", durationMs - shootTimer.milliseconds());
-            telemetry.addData("Distanza Target", localQR[1]);
+            // Telemetria di controllo in tempo reale
+            telemetry.addData("=== AUTO SHOOT ===", "REPLICA TELEOP");
+            telemetry.addData("Tag 20 Status", lastKnownQR[0] == -999 ? "CERCANDO..." : "AGGANCIATO");
+            telemetry.addData("Torretta Servo Pos", lastKnownQR[0] == -999 ? "0.500 (Centro)" : String.format("%.3f", TurretPosition));
+            telemetry.addData("Distanza Target", lastKnownQR[1]);
+            telemetry.addData("Velocità Volano", "Target: %.0f | Real: %.0f", targetVelocity, Math.abs(ctx.topFly.getVelocity()));
             telemetry.update();
 
             idle();
         }
 
+        // Spegnimento totale al termine
         ctx.topFly.setVelocity(0);
         ctx.downFly.setVelocity(0);
         ctx.frontIn.setPower(0);

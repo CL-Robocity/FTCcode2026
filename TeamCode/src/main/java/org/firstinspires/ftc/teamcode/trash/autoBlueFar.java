@@ -1,22 +1,18 @@
-package org.firstinspires.ftc.teamcode;
+package org.firstinspires.ftc.teamcode.trash;
 
 import android.util.Size;
 
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.hardware.TouchSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
-import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
-import com.qualcomm.robotcore.hardware.NormalizedRGBA;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
@@ -31,7 +27,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-@Autonomous(name="Blu Far Auto", group="Main")
+@Autonomous(name="BLUE Far Auto", group="BLUE")
 public class autoBlueFar extends LinearOpMode {
 
     //timer obj
@@ -51,7 +47,7 @@ public class autoBlueFar extends LinearOpMode {
     final double[] pos = {0, 0, 0, 0};
     double hoodPos = .25;
     double shootTime = 0;
-    double POWER_Q = .27;
+    double POWER_Q = .28;
     double oParallel = 0, oPerp = 0, oHeading = 0;
     double speed = SPEED;
     double[] lastKnownQR = {-999, -999, 0, 0};
@@ -194,28 +190,28 @@ public class autoBlueFar extends LinearOpMode {
         LeftTurretServo.setPosition(0.5);
 
 
-        straight(ctx, 10, -45, 0.3, false, false);
+        straight(ctx, 10, -45, 0.3, true, false);
         align(ctx, 10, 0.4, true);
-        autoShoot(ctx, 2500);
+        autoShoot(ctx, 3000);
 
         sleep(200);
 
         align(ctx, 90, 0.4, false);
 
-        straight(ctx, 50, 90, 0.4, false, false);
-        straight(ctx, 70, 0, 0.6, false, true);
+        straight(ctx, 45, 90, 0.4, false, false);
+        straight(ctx, 75, 0, 0.6, false, true);
 
         sleep(200);
 
         straight(ctx, 70, -160, 0.5, false, false);
 
-        align(ctx,10,0.4, true);
+        align(ctx,25,0.4, true);
 
-        autoShoot(ctx, 2500);
+        autoShoot(ctx, 3000);
 
         align(ctx,100, 0.4, false);
 
-        straight(ctx, 70, 0, 0.7 , false, false);
+        straight(ctx, 50, 0, 0.4 , false, false);
 
 
         timer.reset();
@@ -416,6 +412,8 @@ public class autoBlueFar extends LinearOpMode {
         ElapsedTime shootTimer = new ElapsedTime(); // Timer totale del metodo
         ElapsedTime loopTimer = new ElapsedTime();  // Timer per calcolare il delta time (dt)
 
+        double RED_OFFSET = 0.05;
+
         // Variabili di stato locali identiche alla TeleOp
         double shootTime = 0;
         double output = 0;
@@ -435,7 +433,7 @@ public class autoBlueFar extends LinearOpMode {
             if (!ctx.tagProcessor.getDetections().isEmpty()) {
                 List<AprilTagDetection> tags = ctx.tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
-                    if (tag.metadata != null && tag.metadata.id == 20) {
+                    if (tag != null && tag.id == 20) {
                         lastKnownQR[0] = tag.ftcPose.x;
                         lastKnownQR[1] = tag.ftcPose.y;
                         lastKnownQR[2] = 0;
@@ -451,17 +449,19 @@ public class autoBlueFar extends LinearOpMode {
             // 2. CALCOLO POTENZA FLYWHEEL E POSIZIONE HOOD
             if (lastKnownQR[0] != -999) {
                 if (lastKnownQR[1] > 200) {
-                    output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
-                    hoodPos = shootTime > 700 ? 0.50 : 0.58;
+                    output = (lastKnownQR[1] / 100) / 5 + POWER_Q;
+                    hoodPos = shootTime > 400 ? 0.48 : 0.58;
                 } else {
                     output = 0.3 + POWER_Q;
-                    hoodPos = shootTime > 700 ? 0.50 : 0.56;
+                    hoodPos = shootTime > 450 ? 0.48 : 0.56;
                 }
-                if (shootTime > 700) output += 0.04;
+                if (shootTime > 400) output += 0.04;
             } else {
                 // Fallback di sicurezza se non vede il tag all'inizio
                 output = 0.3 + POWER_Q;
             }
+
+            output = Math.min(1, output);
 
             double targetVelocity = output * 2500;
             ctx.topFly.setVelocity(targetVelocity);
@@ -469,17 +469,20 @@ public class autoBlueFar extends LinearOpMode {
 
             // 3. AUTO-AIM DELLA TORRETTA
             if (lastKnownQR[0] != -999) {
-                double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
+                double qrOffset = lastKnownQR[0] - (30 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
                 double distance = lastKnownQR[1];
 
                 double theta = Math.atan(qrOffset / distance);
-                TurretPosition = (Math.toDegrees(theta) * 2.63 + 165) / 300;
+                TurretPosition = ((Math.toDegrees(theta) * 2.63 + 165) / 300) - 0.02;
+                TurretPosition = Math.max(0.02, Math.min(0.98, TurretPosition));
+
+                ctx.turretL.setPosition(TurretPosition);
+                ctx.turretR.setPosition(TurretPosition);
+            } else{
+                ctx.turretL.setPosition(0.5);
+                ctx.turretR.setPosition(0.5);
             }
 
-            // Limiti fisici torretta
-            TurretPosition = Math.max(0.02, Math.min(0.98, TurretPosition));
-            ctx.turretL.setPosition(TurretPosition);
-            ctx.turretR.setPosition(TurretPosition);
 
             // Aggiorna i servomotori dell'hood
             ctx.rampL.setPosition(hoodPos);

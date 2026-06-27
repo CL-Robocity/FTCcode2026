@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode;
+package org.firstinspires.ftc.teamcode.trash;
 
 import android.util.Size;
 import com.acmerobotics.dashboard.FtcDashboard;
@@ -21,8 +21,8 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 
-@TeleOp(name="Blue TeleOP", group="Main")
-public class BlueTeleOP extends LinearOpMode {
+@TeleOp(name="Red TeleOP", group="RED")
+public class RedTeleOP extends LinearOpMode {
 
     ElapsedTime timer = new ElapsedTime();
 
@@ -37,7 +37,7 @@ public class BlueTeleOP extends LinearOpMode {
     final double[] pos = {0, 0, 0, 0};
     double hoodPos = .25;
     double shootTime = 0;
-    double POWER_Q = .25;
+    double POWER_Q = .23;
     boolean lastDpadUp2 = false;
     boolean lastDpadDown2 = false;
     double oParallel = 0, oPerp = 0, oHeading = 0;
@@ -226,7 +226,7 @@ public class BlueTeleOP extends LinearOpMode {
             if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) { //se ha detectato qualcosa e triangolo premuto
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
-                    if (tag.metadata != null && tag.metadata.id == 20) {
+                    if (tag.metadata != null && tag.metadata.id == 24) {
                         lastKnownQR[0] = tag.ftcPose.x; // allineamento in orizzontale
                         lastKnownQR[1] = tag.ftcPose.y; // distanza dal qr code
                         lastKnownQR[2] = 0; // timer dal detect dell'ultimo qr code
@@ -243,12 +243,12 @@ public class BlueTeleOP extends LinearOpMode {
             if (lastKnownQR[0] != -999 && gamepad2.triangle) {
                 if (lastKnownQR[1] > 200) {
                     output = (lastKnownQR[1] / 100) / 7 + POWER_Q;
-                    hoodPos = shootTime > 700 ? 0.50 : 0.58; // dopo : prima
+                    hoodPos = shootTime > 400 ? 0.50 : 0.58; // dopo : prima
                 } else {
                     output = 0.3 + POWER_Q;
-                    hoodPos = shootTime > 700? 0.50: 0.56; // dopo : prima
+                    hoodPos = shootTime > 450? 0.48: 0.56; // dopo : prima
                 }
-                if (shootTime > 700) output += 0.04;
+                if (shootTime > 400) output += 0.04;
             }
 
             // se non stai premendo triangolo va in base al R2
@@ -299,7 +299,7 @@ public class BlueTeleOP extends LinearOpMode {
 
             // autoaim oppure aim manuale
             if (gamepad2.triangle && lastKnownQR[0] != -999) {
-                double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
+                double qrOffset = lastKnownQR[0] - (30 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
                 double distance = lastKnownQR[1];// + Math.abs(48 * Math.sin(Math.PI/2 - Math.toRadians(lastKnownQR[3])));
                 telemetry.addData("qrOffset", qrOffset);
                 telemetry.addData("distance", 48 * Math.sin(Math.PI/2 - Math.toRadians(lastKnownQR[3])));

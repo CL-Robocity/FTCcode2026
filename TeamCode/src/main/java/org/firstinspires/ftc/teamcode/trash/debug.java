@@ -1,8 +1,9 @@
-package org.firstinspires.ftc.teamcode;
+package org.firstinspires.ftc.teamcode.trash;
 
 import android.util.Size;
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -20,9 +21,9 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagLibrary;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
-
-@TeleOp(name="Red TeleOP", group="Main")
-public class RedTeleOP extends LinearOpMode {
+@Disabled
+@TeleOp(name="MainTest", group="Main")
+public class debug extends LinearOpMode {
 
     ElapsedTime timer = new ElapsedTime();
 
@@ -246,14 +247,14 @@ public class RedTeleOP extends LinearOpMode {
                     hoodPos = shootTime > 700 ? 0.50 : 0.58; // dopo : prima
                 } else {
                     output = 0.3 + POWER_Q;
-                    hoodPos = shootTime > 700? 0.50: 0.52; // dopo : prima
+                    hoodPos = shootTime > 700? 0.50: 0.56; // dopo : prima
                 }
                 if (shootTime > 700) output += 0.04;
             }
 
             // se non stai premendo triangolo va in base al R2
-            if (!gamepad2.triangle) {
-                output = Math.max(gamepad2.right_trigger, 0);
+             if (!gamepad2.triangle) {
+               output = Math.max(gamepad2.right_trigger, 0.4);
 
             }
 
@@ -284,8 +285,6 @@ public class RedTeleOP extends LinearOpMode {
                 BallStopServo.setPosition(0);
                 shootTime += timer.milliseconds();
             }
-
-            if(gamepad2.left_stick_button) BallStopServo.setPosition(0.25);
 
             // set posizione servo hood
             if ((gamepad2.dpad_down && hoodPos > 0) && !gamepad2.triangle) {

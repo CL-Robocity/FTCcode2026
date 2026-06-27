@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode;
+package org.firstinspires.ftc.teamcode.trash;
 
 import android.util.Size;
 import com.acmerobotics.dashboard.FtcDashboard;
@@ -21,8 +21,8 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import java.util.List;
 
-@TeleOp(name="AutoMovement", group="Main")
-public class movement_testi extends LinearOpMode {
+@TeleOp(name="BLUE TeleOP", group="BLUE")
+public class BlueTeleOP extends LinearOpMode {
 
     ElapsedTime timer = new ElapsedTime();
 
@@ -37,7 +37,7 @@ public class movement_testi extends LinearOpMode {
     final double[] pos = {0, 0, 0, 0};
     double hoodPos = .25;
     double shootTime = 0;
-    double POWER_Q = .28;
+    double POWER_Q = .25;
     boolean lastDpadUp2 = false;
     boolean lastDpadDown2 = false;
     double oParallel = 0, oPerp = 0, oHeading = 0;
@@ -153,7 +153,7 @@ public class movement_testi extends LinearOpMode {
 
         telemetry.addData("Servo: ", "Ready :)");
 
-        debug.ctx ctx = new debug.ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
+        ctx ctx = new ctx(lfD, lbD, rfD, rbD, odoParallel, odoPerp, imu);
 
         telemetry.addData("ctx: ", "Ready :)");
         telemetry.addData("\nStatus", "Robot Ready :)");
@@ -163,7 +163,7 @@ public class movement_testi extends LinearOpMode {
         timer.reset();
 
         while (opModeIsActive()) {
-            //odometry(ctx);
+            odometry(ctx);
             double x = pos[0], y = pos[1], h = pos[2];
 
             // set motori flywheel
@@ -201,24 +201,32 @@ public class movement_testi extends LinearOpMode {
             ctx.rBd.setPower(MotArr[3] * speed);
 
 
-            if(gamepad1.right_bumper){
-                IntakeRoller.setPower(1);
-                FrontIntake.setPower(.8);
 
-            }else{
-                IntakeRoller.setPower(0);
-                FrontIntake.setPower(0);
+
+            // Alzi la potenza della flywheel con la freccetta IN SU
+            if (gamepad2.dpad_right && !lastDpadUp2) {
+                POWER_Q += 0.02;
+                if (POWER_Q > 1.0) {
+                    POWER_Q = 1.0; // Limite massimo di sicurezza per i motori
+                }
             }
+            lastDpadUp2 = gamepad2.dpad_right; // Memorizza lo stato corrente per il prossimo ciclo
 
 
-
-
+            // Abbassi la potenza della flywheel con la freccetta IN GIÙ ---
+            if (gamepad2.dpad_left && !lastDpadDown2) {
+                POWER_Q -= 0.02;
+                if (POWER_Q < 0.0) {
+                    POWER_Q = 0.0; // Evita che vada in negativo
+                }
+            }
+            lastDpadDown2 = gamepad2.dpad_left; // Memorizza lo stato
 
             // detect qr code
             if (!tagProcessor.getDetections().isEmpty() && gamepad2.triangle) { //se ha detectato qualcosa e triangolo premuto
                 List<AprilTagDetection> tags = tagProcessor.getDetections();
                 for (AprilTagDetection tag : tags) {
-                    if (tag.metadata != null && tag.metadata.id == 24) {
+                    if (tag.metadata != null && tag.metadata.id == 20) {
                         lastKnownQR[0] = tag.ftcPose.x; // allineamento in orizzontale
                         lastKnownQR[1] = tag.ftcPose.y; // distanza dal qr code
                         lastKnownQR[2] = 0; // timer dal detect dell'ultimo qr code
@@ -229,7 +237,69 @@ public class movement_testi extends LinearOpMode {
                 }
             }
             // set potenza in output
+            lastKnownQR[2] += timer.milliseconds();
+            if (lastKnownQR[2] > QR_LIVE_TIME) lastKnownQR[0] = -999;
 
+            if (lastKnownQR[0] != -999 && gamepad2.triangle) { //lontano
+                if (lastKnownQR[1] > 200) {
+                    output = (lastKnownQR[1] / 100) / 6 + POWER_Q;
+                    hoodPos = shootTime > 400 ? 0.48 : 0.56; // dopo : prima
+                } else { // vicino
+                    output = 0.3 + POWER_Q;
+                    hoodPos = shootTime > 450 ? 0.48 : 0.56; // dopo : prima
+                }
+                if (shootTime > 400 && lastKnownQR[1] > 200) {
+                    output += 0.04;
+                } else  if(shootTime > 700){
+                    output += 0.04;
+                }
+            }
+
+            // se non stai premendo triangolo va in base al R2
+            if (!gamepad2.triangle && !gamepad2.square && !gamepad2.circle) {
+                output = Math.max(gamepad2.right_trigger, 0.4);
+
+            }
+
+            if(gamepad2.circle && !gamepad2.triangle) {
+                output = 0.3 + POWER_Q;
+                hoodPos = 0.56;
+            }
+            if(gamepad2.square && !gamepad2.triangle) {
+                output = 0.5 + POWER_Q;
+                hoodPos = 0.56;
+
+            }
+
+            output = Math.min(1,output);
+
+            double targetVelocity = output * 2500;
+            TopFlyWheel.setVelocity(targetVelocity);
+            DownFlyWheel.setVelocity(targetVelocity);
+
+            // set potenza dell'intake bilaterale per entrambi i pad
+            double intake = gamepad1.right_trigger > gamepad2.left_trigger ? Math.min(1, gamepad1.right_trigger + 0.1) : Math.min(1, gamepad2.left_trigger + 0.1);
+
+            // se non stai premendo la croce --> servo di stop non completamente fuori
+            if (!gamepad2.cross) {
+                FrontIntake.setPower(intake);
+                IntakeRoller.setPower(intake > 0.1 ? 0.3 : 0);
+                BallStopServo.setPosition(.25);
+                shootTime = 0;
+            } else {// se x è premuta
+                double currentVel = Math.abs(TopFlyWheel.getVelocity());
+                boolean flywheelReady = (targetVelocity > 100) && (currentVel >= (targetVelocity - 150));
+
+                if (shootTime > 200) {
+                    FrontIntake.setPower(.4);
+                    IntakeRoller.setPower(1);
+                } else {
+                    FrontIntake.setPower(0);
+                    IntakeRoller.setPower(0);
+                }
+                BallStopServo.setPosition(0);
+                shootTime += timer.milliseconds();
+            }
 
             // set posizione servo hood
             if ((gamepad2.dpad_down && hoodPos > 0) && !gamepad2.triangle) {
@@ -245,7 +315,7 @@ public class movement_testi extends LinearOpMode {
 
             // autoaim oppure aim manuale
             if (gamepad2.triangle && lastKnownQR[0] != -999) {
-                double qrOffset = lastKnownQR[0] - (48 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
+                double qrOffset = lastKnownQR[0] - (30 * Math.cos(Math.PI/2 - Math.toRadians(lastKnownQR[3])) - CAMERA_OFFSET);
                 double distance = lastKnownQR[1];// + Math.abs(48 * Math.sin(Math.PI/2 - Math.toRadians(lastKnownQR[3])));
                 telemetry.addData("qrOffset", qrOffset);
                 telemetry.addData("distance", 48 * Math.sin(Math.PI/2 - Math.toRadians(lastKnownQR[3])));
@@ -253,7 +323,7 @@ public class movement_testi extends LinearOpMode {
                 double theta = Math.atan(qrOffset / distance);
                 telemetry.addData("angle", Math.toDegrees(theta));
 
-                TurretPosition = (Math.toDegrees(theta) * 2.63 + 165) / 300;
+                TurretPosition = (Math.toDegrees(theta) * 2.63 + 165) / 300 ;
 
                 telemetry.addData("tempPos", TurretPosition);
             } else {
@@ -263,6 +333,7 @@ public class movement_testi extends LinearOpMode {
                 if (gamepad2.left_bumper && !gamepad2.right_bumper) { // left bumper a sinistra
                     TurretPosition -= 0.001 * timer.milliseconds();
                 }
+
             }
 
             // limite torretta (90° totali = ±45°)
@@ -274,9 +345,15 @@ public class movement_testi extends LinearOpMode {
             telemetry.addData("\nHoodPos -- ", RampLeftServo.getPosition());
 
             telemetry.addData("\nxyt", "x: %.2f y: %.2f t: %.2f", x, y, Math.toDegrees(h));
+            telemetry.addData("\nFlywheel Target", targetVelocity);
+            telemetry.addData("Flywheel Actual", TopFlyWheel.getVelocity());
+
+            telemetry.addData("\n DistanceQR", lastKnownQR[1]);
 
             telemetry.addData("\n ODO PARALLEL --> ", odoParallel.getCurrentPosition());
             telemetry.addData("ODO PERP --> ", odoPerp.getCurrentPosition());
+
+            telemetry.addData("\n Fly Wheel Power : ", POWER_Q);
 
             telemetry.addData("\n Pointing deg : ", Math.toDegrees(Math.atan2(-gamepad1.left_stick_y,gamepad1.left_stick_x)));
             telemetry.update();
