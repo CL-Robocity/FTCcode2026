@@ -27,6 +27,7 @@ public class StandardMvmnt {
         double rX = gamepad.right_stick_x;
         boolean left_bumper = gamepad.left_bumper;
         double left_trigger = gamepad.left_trigger;
+
         //gestione velocità movimento
         speedControl(left_bumper, left_trigger);
 
