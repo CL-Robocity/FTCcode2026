@@ -1,0 +1,9 @@
+{
+  "units": "in",
+  "start": { "x": 24, "y": 24, "heading": 0 },
+  "segments": [
+    { "type": "line",  "to": [24, 60], "heading": "tangent" },
+    { "type": "curve", "controls": [[24, 84], [48, 84]], "to": [48, 60], "heading": 90 },
+    { "type": "line",  "to": [48, 24], "heading": 180 }
+  ]
+}

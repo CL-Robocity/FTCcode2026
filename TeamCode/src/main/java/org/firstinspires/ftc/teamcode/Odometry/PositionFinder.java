@@ -1,10 +1,13 @@
-
 package org.firstinspires.ftc.teamcode.Odometry;
 
 import org.firstinspires.ftc.teamcode.RobotHardware.RobotHardware;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
+/**
+ * Odometria con 2 dead wheels + IMU.
+ * Unita': cm. Heading: 0 = robot verso +Y, positivo antiorario (come l'IMU FTC).
+ */
 public class PositionFinder {
 
     // ===== PARAMETRI DA CALIBRARE =====
@@ -12,13 +15,18 @@ public class PositionFinder {
     // Tick dell'encoder necessari per percorrere 1 cm
     private static final double TICKS_PER_CM = 100.0;
 
-    // Posizione della ruota parallela rispetto al centro:
+    // Posizione della ruota parallela rispetto al centro (cm):
     // positiva se si trova a destra del centro del robot
     private static final double PARALLEL_OFFSET = 0.0;
 
-    // Posizione della ruota perpendicolare rispetto al centro:
+    // Posizione della ruota perpendicolare rispetto al centro (cm):
     // positiva se si trova verso la parte anteriore del robot
     private static final double PERPENDICULAR_OFFSET = 0.0;
+
+    // Segno degli encoder: +1 oppure -1 se la ruota conta al contrario
+    // (parallela: avanti = positivo, perpendicolare: destra = positivo)
+    private static final double PARALLEL_DIR = 1.0;
+    private static final double PERPENDICULAR_DIR = 1.0;
 
 
     // ===== HARDWARE E POSIZIONE =====
@@ -27,20 +35,26 @@ public class PositionFinder {
 
     private double x;
     private double y;
-    private double direction;
+    private double direction; // gradi
 
     private int lastParallelTicks;
     private int lastPerpendicularTicks;
 
-    private double lastHeading;
+    private double lastHeading;     // radianti
+    private double headingOffset;   // converte l'yaw dell'IMU nell'heading di campo
 
 
-    // ===== COSTRUTTORE =====
+    // ===== COSTRUTTORI =====
+
+    public PositionFinder(RobotHardware robot, double initialX, double initialY) {
+        this(robot, initialX, initialY, 0.0);
+    }
 
     public PositionFinder(
             RobotHardware robot,
             double initialX,
-            double initialY
+            double initialY,
+            double initialHeadingDeg
     ) {
         this.Robot = robot;
 
@@ -52,9 +66,11 @@ public class PositionFinder {
         lastParallelTicks = Robot.odoParallel.getCurrentPosition();
         lastPerpendicularTicks = Robot.odoPerp.getCurrentPosition();
 
-        // La direzione iniziale viene considerata pari a zero
-        lastHeading = getRawHeading();
-        direction = 0.0;
+        // L'heading di campo parte da initialHeadingDeg, qualunque sia l'yaw dell'IMU ora
+        double startHeading = Math.toRadians(initialHeadingDeg);
+        headingOffset = startHeading - getRawHeading();
+        lastHeading = normalizeAngle(startHeading);
+        direction = Math.toDegrees(lastHeading);
     }
 
 
@@ -66,77 +82,41 @@ public class PositionFinder {
                 .getYaw(AngleUnit.RADIANS);
     }
 
-    private double getDirectionRadians() {
-        return normalizeAngle(getRawHeading() - initialHeading);
-    }
-
-    private double initialHeading = 0.0;
-
 
     // ===== AGGIORNAMENTO POSIZIONE =====
 
     public void update() {
 
         // Lettura encoder attuali
-        int currentParallelTicks =
-                Robot.odoParallel.getCurrentPosition();
-
-        int currentPerpendicularTicks =
-                Robot.odoPerp.getCurrentPosition();
+        int currentParallelTicks = Robot.odoParallel.getCurrentPosition();
+        int currentPerpendicularTicks = Robot.odoPerp.getCurrentPosition();
 
         // Differenza rispetto al ciclo precedente
-        int deltaParallelTicks =
-                currentParallelTicks - lastParallelTicks;
+        int deltaParallelTicks = currentParallelTicks - lastParallelTicks;
+        int deltaPerpendicularTicks = currentPerpendicularTicks - lastPerpendicularTicks;
 
-        int deltaPerpendicularTicks =
-                currentPerpendicularTicks - lastPerpendicularTicks;
-
-        // Aggiorna i riferimenti per il prossimo ciclo
         lastParallelTicks = currentParallelTicks;
         lastPerpendicularTicks = currentPerpendicularTicks;
 
-
         // Direzione attuale e variazione angolare
-        double currentHeading = getDirectionRadians();
-        currentHeading = normalizeAngle(currentHeading);
-
-        double deltaHeading =
-                normalizeAngle(currentHeading - lastHeading);
+        double currentHeading = normalizeAngle(getRawHeading() + headingOffset);
+        double deltaHeading = normalizeAngle(currentHeading - lastHeading);
 
         // Angolo medio durante lo spostamento
-        double averageHeading =
-                lastHeading + deltaHeading / 2.0;
-
+        double averageHeading = lastHeading + deltaHeading / 2.0;
 
         // Conversione da tick a centimetri
-        double parallelDistance =
-                deltaParallelTicks / TICKS_PER_CM;
-
-        double perpendicularDistance =
-                deltaPerpendicularTicks / TICKS_PER_CM;
-
+        double parallelDistance = PARALLEL_DIR * deltaParallelTicks / TICKS_PER_CM;
+        double perpendicularDistance = PERPENDICULAR_DIR * deltaPerpendicularTicks / TICKS_PER_CM;
 
         // Correzione dello spostamento causato dalla rotazione
-        double localY =
-                parallelDistance - PARALLEL_OFFSET * deltaHeading;
+        double localY = parallelDistance - PARALLEL_OFFSET * deltaHeading;
+        double localX = perpendicularDistance + PERPENDICULAR_OFFSET * deltaHeading;
 
-        double localX =
-                perpendicularDistance
-                        + PERPENDICULAR_OFFSET * deltaHeading;
+        // Dalle coordinate del robot alle coordinate del campo
+        double deltaX = localX * Math.cos(averageHeading) - localY * Math.sin(averageHeading);
+        double deltaY = localX * Math.sin(averageHeading) + localY * Math.cos(averageHeading);
 
-
-        // Trasformazione dalle coordinate del robot
-        // alle coordinate del campo.
-        double deltaX =
-                localX * Math.cos(averageHeading)
-                        - localY * Math.sin(averageHeading);
-
-        double deltaY =
-                localX * Math.sin(averageHeading)
-                        + localY * Math.cos(averageHeading);
-
-
-        // Aggiornamento coordinate assolute
         x += deltaX;
         y += deltaY;
 
@@ -147,8 +127,14 @@ public class PositionFinder {
 
     // ===== METODI PUBBLICI =====
 
+    /** Heading in gradi, [-180, 180]. */
     public double getDirection() {
         return direction;
+    }
+
+    /** Heading in radianti, [-pi, pi]. */
+    public double getHeadingRadians() {
+        return lastHeading;
     }
 
     public double[] getPosition() {
