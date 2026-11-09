@@ -1,144 +1,88 @@
+
 package org.firstinspires.ftc.teamcode.Odometry;
 
 import org.firstinspires.ftc.teamcode.RobotHardware.RobotHardware;
 
+import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 
-/**
- * Odometria con 2 dead wheels + IMU.
- * Unita': cm. Heading: 0 = robot verso +Y, positivo antiorario (come l'IMU FTC).
- */
 public class PositionFinder {
 
-    // ===== PARAMETRI DA CALIBRARE =====
-
-    // Tick dell'encoder necessari per percorrere 1 cm
-    private static final double TICKS_PER_CM = 100.0;
-
-    // Posizione della ruota parallela rispetto al centro (cm):
-    // positiva se si trova a destra del centro del robot
-    private static final double PARALLEL_OFFSET = 0.0;
-
-    // Posizione della ruota perpendicolare rispetto al centro (cm):
-    // positiva se si trova verso la parte anteriore del robot
-    private static final double PERPENDICULAR_OFFSET = 0.0;
-
-    // Segno degli encoder: +1 oppure -1 se la ruota conta al contrario
-    // (parallela: avanti = positivo, perpendicolare: destra = positivo)
-    private static final double PARALLEL_DIR = 1.0;
-    private static final double PERPENDICULAR_DIR = 1.0;
-
-
-    // ===== HARDWARE E POSIZIONE =====
-
-    private final RobotHardware Robot;
+    private final GoBildaPinpointDriver pinpoint;
 
     private double x;
     private double y;
-    private double direction; // gradi
+    private double headingRad;
 
-    private int lastParallelTicks;
-    private int lastPerpendicularTicks;
-
-    private double lastHeading;     // radianti
-    private double headingOffset;   // converte l'yaw dell'IMU nell'heading di campo
-
-
-    // ===== COSTRUTTORI =====
-
-    public PositionFinder(RobotHardware robot, double initialX, double initialY) {
-        this(robot, initialX, initialY, 0.0);
-    }
+    // Il programma usa:
+    // 0° = robot rivolto verso +Y
+    // positivo = rotazione antioraria
+    //
+    // Il Pinpoint usa:
+    // 0° = asse +X
+    // positivo = rotazione antioraria
+    private static final double PINPOINT_HEADING_OFFSET = Math.PI / 2.0;
 
     public PositionFinder(
             RobotHardware robot,
-            double initialX,
-            double initialY,
-            double initialHeadingDeg
+            double startX,
+            double startY,
+            double startHeadingDeg
     ) {
-        this.Robot = robot;
 
-        // Coordinate iniziali assolute rispetto all'angolo (0,0)
-        this.x = initialX;
-        this.y = initialY;
+        if (robot.pinpoint == null) {
+            throw new IllegalStateException(
+                    "Pinpoint non inizializzato in RobotHardware!"
+            );
+        }
 
-        // Memorizza le letture iniziali degli encoder
-        lastParallelTicks = Robot.odoParallel.getCurrentPosition();
-        lastPerpendicularTicks = Robot.odoPerp.getCurrentPosition();
+        pinpoint = robot.pinpoint;
 
-        // L'heading di campo parte da initialHeadingDeg, qualunque sia l'yaw dell'IMU ora
-        double startHeading = Math.toRadians(initialHeadingDeg);
-        headingOffset = startHeading - getRawHeading();
-        lastHeading = normalizeAngle(startHeading);
-        direction = Math.toDegrees(lastHeading);
+        // Conversione heading del programma -> heading Pinpoint
+        double pinpointHeading = Math.toRadians(startHeadingDeg)
+                + PINPOINT_HEADING_OFFSET;
+
+        // Imposta la posizione iniziale del robot nel campo
+        pinpoint.setPosition(
+                new Pose2D(
+                        DistanceUnit.CM,
+                        startX,
+                        startY,
+                        AngleUnit.RADIANS,
+                        pinpointHeading
+                )
+        );
+
+        update();
     }
 
-
-    // ===== LETTURA IMU =====
-
-    private double getRawHeading() {
-        return Robot.imu
-                .getRobotYawPitchRollAngles()
-                .getYaw(AngleUnit.RADIANS);
-    }
-
-
-    // ===== AGGIORNAMENTO POSIZIONE =====
-
+    // Aggiornamento della posizione
     public void update() {
 
-        // Lettura encoder attuali
-        int currentParallelTicks = Robot.odoParallel.getCurrentPosition();
-        int currentPerpendicularTicks = Robot.odoPerp.getCurrentPosition();
+        pinpoint.update();
 
-        // Differenza rispetto al ciclo precedente
-        int deltaParallelTicks = currentParallelTicks - lastParallelTicks;
-        int deltaPerpendicularTicks = currentPerpendicularTicks - lastPerpendicularTicks;
+        // Posizione in centimetri
+        x = pinpoint.getPosX(DistanceUnit.CM);
+        y = pinpoint.getPosY(DistanceUnit.CM);
 
-        lastParallelTicks = currentParallelTicks;
-        lastPerpendicularTicks = currentPerpendicularTicks;
+        // Heading Pinpoint -> heading del programma
+        double pinpointHeading = pinpoint.getHeading(AngleUnit.RADIANS);
 
-        // Direzione attuale e variazione angolare
-        double currentHeading = normalizeAngle(getRawHeading() + headingOffset);
-        double deltaHeading = normalizeAngle(currentHeading - lastHeading);
-
-        // Angolo medio durante lo spostamento
-        double averageHeading = lastHeading + deltaHeading / 2.0;
-
-        // Conversione da tick a centimetri
-        double parallelDistance = PARALLEL_DIR * deltaParallelTicks / TICKS_PER_CM;
-        double perpendicularDistance = PERPENDICULAR_DIR * deltaPerpendicularTicks / TICKS_PER_CM;
-
-        // Correzione dello spostamento causato dalla rotazione
-        double localY = parallelDistance - PARALLEL_OFFSET * deltaHeading;
-        double localX = perpendicularDistance + PERPENDICULAR_OFFSET * deltaHeading;
-
-        // Dalle coordinate del robot alle coordinate del campo
-        double deltaX = localX * Math.cos(averageHeading) - localY * Math.sin(averageHeading);
-        double deltaY = localX * Math.sin(averageHeading) + localY * Math.cos(averageHeading);
-
-        x += deltaX;
-        y += deltaY;
-
-        direction = Math.toDegrees(currentHeading);
-        lastHeading = currentHeading;
+        headingRad = normalizeRadians(
+                pinpointHeading - PINPOINT_HEADING_OFFSET
+        );
     }
 
-
-    // ===== METODI PUBBLICI =====
-
-    /** Heading in gradi, [-180, 180]. */
+    // Restituisce l'heading in gradi [0, 360)
     public double getDirection() {
-        return direction;
+        return normalizeDegrees(Math.toDegrees(headingRad));
     }
 
-    /** Heading in radianti, [-pi, pi]. */
+    // Restituisce l'heading in radianti
     public double getHeadingRadians() {
-        return lastHeading;
-    }
-
-    public double[] getPosition() {
-        return new double[]{x, y};
+        return headingRad;
     }
 
     public double getX() {
@@ -149,9 +93,25 @@ public class PositionFinder {
         return y;
     }
 
+    private double normalizeRadians(double angle) {
+        while (angle > Math.PI) {
+            angle -= 2.0 * Math.PI;
+        }
 
-    // Riporta un angolo nell'intervallo [-π, π]
-    private double normalizeAngle(double angle) {
-        return Math.atan2(Math.sin(angle), Math.cos(angle));
+        while (angle < -Math.PI) {
+            angle += 2.0 * Math.PI;
+        }
+
+        return angle;
+    }
+
+    private double normalizeDegrees(double angle) {
+        angle %= 360.0;
+
+        if (angle < 0) {
+            angle += 360.0;
+        }
+
+        return angle;
     }
 }
